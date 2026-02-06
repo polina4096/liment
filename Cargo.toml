@@ -1,0 +1,45 @@
+[package]
+name = "anthropic-limits-tray"
+version = "0.1.0"
+edition = "2024"
+
+[lints.clippy]
+# Stylistic
+self_named_module_files = "deny"
+needless_return = "allow"
+single_match = "allow"
+
+# Annoying default lints
+uninlined_format_args = "allow" # Inconsistency with complex format args
+new_without_default = "allow"   # Not all types make sense with default
+
+# Safety
+await_holding_invalid_type = "deny"
+await_holding_refcell_ref = "deny"
+await_holding_lock = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
+[profile.dev]
+opt-level = 1
+lto = "off"
+codegen-units = 256
+overflow-checks = false
+
+[profile.dev.package."*"]
+opt-level = 3
+overflow-checks = false
+
+[dependencies]
+objc2 = "0.6.3"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
+objc2-core-foundation = "0.3.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "3"
+block2 = "0.6.2"

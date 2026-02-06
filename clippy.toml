@@ -1,0 +1,31 @@
+await-holding-invalid-types = [
+  { path = "tokio::sync::Mutex", reason = "Async locks are forbidden — use channels/message passing instead." },
+  { path = "tokio::sync::RwLock", reason = "Async locks are forbidden — use channels/message passing instead." },
+]
+
+disallowed-types = [
+  { path = "std::fs::OpenOptions", reason = "Use fs_err::OpenOptions instead for better error messages." },
+  { path = "std::path::Path", reason = "Use camino::Utf8Path instead for better ergonomics." },
+  { path = "std::path::PathBuf", reason = "Use camino::Utf8PathBuf instead for better ergonomics." },
+]
+
+disallowed-methods = [
+  { path = "std::fs::read_to_string", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::write", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::read", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::read_dir", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::create_dir", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::create_dir_all", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::remove_file", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::remove_dir", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::remove_dir_all", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::copy", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::rename", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::metadata", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::symlink_metadata", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::canonicalize", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::hard_link", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::soft_link", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::File::open", reason = "Use fs_err so error messages contain paths." },
+  { path = "std::fs::File::create", reason = "Use fs_err so error messages contain paths." },
+]
