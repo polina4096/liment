@@ -1,3 +1,5 @@
+use std::ffi::c_void;
+
 use block2::RcBlock;
 use objc2::{
   AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
@@ -10,7 +12,8 @@ use objc2_app_kit::{
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
-  NSAttributedString, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSString, NSTimer,
+  NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
+  NSString, NSTimer,
 };
 
 use crate::{
@@ -61,9 +64,12 @@ define_class!(
           .unwrap_or_default()
           .as_secs_f64();
 
-        let p = (secs % 10.0) / 10.0;
-        let label = format!("{}%", (p * 100.0) as u32);
-        let img = Self::build_tray_image(&format!("5h {label}"), p, &format!("7d {label}"), p);
+        let p1 = ((secs + 3.7) % 10.0) / 10.0;
+        let p2 = (secs % 10.0) / 10.0;
+        let img = Self::build_tray_image(
+          &format!("7d {}%", (p1 * 100.0) as u32), p1,
+          &format!("5h {}%", (p2 * 100.0) as u32), p2,
+        );
 
         button.setImage(Some(&img));
       }
@@ -97,7 +103,7 @@ impl AppDelegate {
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let img = Self::build_tray_image("5h ..", 0.0, "7d ..", 0.0);
+      let img = Self::build_tray_image("7d ..", 0.0, "5h ..", 0.0);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
@@ -127,7 +133,7 @@ impl AppDelegate {
     else {
       // Handle failure to fetch usage data and reflect it in the tray button.
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image("5h --", 0.0, "7d --", 0.0);
+        let img = Self::build_tray_image("7d --", 0.0, "5h --", 0.0);
 
         tray_button.setImage(Some(&img));
       }
@@ -140,8 +146,8 @@ impl AppDelegate {
       let five_h = usage.five_hour.as_ref().map(|b| b.utilization).unwrap_or(0.0);
       let seven_d = usage.seven_day.as_ref().map(|b| b.utilization).unwrap_or(0.0);
 
-      let line1 = format!("5h {}%", five_h as u32);
-      let line2 = format!("7d {}%", seven_d as u32);
+      let line1 = format!("7d {}%", seven_d as u32);
+      let line2 = format!("5h {}%", five_h as u32);
 
       let five_p = five_h / 100.0;
       let seven_p = seven_d / 100.0;
@@ -177,7 +183,7 @@ impl AppDelegate {
     return Retained::into_super(result);
   }
 
-  /// Renders two colored lines into an NSImage for the tray button.
+  /// Renders the Claude logo and two colored lines into an NSImage for the tray button.
   /// Using an image instead of an attributed title allows macOS to properly
   /// dim the content on inactive displays via menu bar compositing.
   fn build_tray_image(line1: &str, p1: f64, line2: &str, p2: f64) -> Retained<NSImage> {
@@ -187,13 +193,37 @@ impl AppDelegate {
     let size1 = attr1.size();
     let size2 = attr2.size();
 
+    // Find longest string width & text height.
+    let text_width = size1.width.max(size2.width).ceil();
     let line_height = 10.0_f64;
-    let (width, height) = (size1.width.max(size2.width).ceil(), line_height * 2.0);
-    let image_size = objc2_foundation::NSSize::new(width, height);
+    let text_height = line_height * 2.0;
 
-    let block = RcBlock::new(move |_rect: objc2_foundation::NSRect| -> Bool {
-      attr1.drawAtPoint(CGPoint::new(0.0, line_height));
-      attr2.drawAtPoint(CGPoint::new(0.0, 0.0));
+    // Logo size and padding.
+    let logo_size = 14.0_f64;
+    let logo_padding = 8.0_f64;
+
+    // Offset for text: logo width + x padding.
+    let text_x = logo_size + logo_padding;
+
+    // Total button image size.
+    let (width, height) = (text_x + text_width, text_height);
+    let image_size = NSSize::new(width, height);
+
+    // Load the Claude logo from the embedded SVG.
+    let svg_bytes = include_bytes!("../resources/claude.svg");
+    let logo_data = unsafe { NSData::dataWithBytes_length(svg_bytes.as_ptr() as *const c_void, svg_bytes.len()) };
+    let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load Claude logo");
+    logo_img.setSize(NSSize::new(logo_size, logo_size));
+
+    let block = RcBlock::new(move |_rect: NSRect| -> Bool {
+      // Draw logo on the left, vertically centered.
+      let logo_y = (height - logo_size) / 2.0;
+      let logo_rect = NSRect::new(CGPoint::new(0.0, logo_y), NSSize::new(logo_size, logo_size));
+      logo_img.drawInRect(logo_rect);
+
+      // Draw text lines to the right of the logo.
+      attr1.drawAtPoint(CGPoint::new(text_x, line_height));
+      attr2.drawAtPoint(CGPoint::new(text_x, 0.0));
 
       return Bool::YES;
     });
