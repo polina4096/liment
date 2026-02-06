@@ -1,11 +1,22 @@
 use anyhow::{Context as _, Result};
 use jiff::Timestamp;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSAlert, NSAlertStyle};
+use objc2_app_kit::{NSAlert, NSAlertStyle, NSView};
 use objc2_foundation::NSString;
 use secrecy::SecretString;
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::Deserialize;
+
+pub trait NSViewExt {
+  #[expect(non_snake_case)]
+  fn noAutoresize(&self);
+}
+
+impl NSViewExt for NSView {
+  fn noAutoresize(&self) {
+    return self.setTranslatesAutoresizingMaskIntoConstraints(false);
+  }
+}
 
 pub trait SearchResultExt {
   fn into_data(self) -> Option<Vec<u8>>;

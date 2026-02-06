@@ -11,6 +11,7 @@ use crate::{
 };
 
 mod api;
+mod components;
 mod delegate;
 mod util;
 mod views;

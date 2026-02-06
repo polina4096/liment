@@ -49,3 +49,4 @@ jiff = { version = "0.2.19", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 security-framework = "3.5.1"
 secrecy = "0.10"
+tap = "1.0.1"
