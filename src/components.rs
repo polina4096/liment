@@ -3,12 +3,15 @@ use objc2_app_kit::{
   NSColor, NSFont, NSLayoutConstraint, NSMenuItem, NSProgressIndicator, NSProgressIndicatorStyle, NSTextField, NSView,
 };
 use objc2_core_foundation::CGFloat;
-use objc2_foundation::{NSArray, NSSize, NSString};
+use objc2_foundation::{NSArray, NSString};
 
 use crate::{
   api::{SubscriptionTier, UsageBucket},
   util::{NSViewExt, format_reset_time},
 };
+
+const MENU_WIDTH: CGFloat = 256.0;
+const H_PADDING: CGFloat = 14.0;
 
 fn font_weight_regular() -> CGFloat {
   return unsafe { objc2_app_kit::NSFontWeightRegular };
@@ -32,6 +35,12 @@ fn activate(constraints: &[&NSLayoutConstraint]) {
   return NSLayoutConstraint::activateConstraints(&array);
 }
 
+/// Resolves Auto Layout constraints and updates the container's frame.
+fn layout(container: &NSView) {
+  container.layoutSubtreeIfNeeded();
+  container.setFrameSize(container.fittingSize());
+}
+
 pub fn bucket_row(mtm: MainThreadMarker, label: &str, bucket: &UsageBucket) -> Retained<NSMenuItem> {
   let reset_str = format_reset_time(&bucket.resets_at);
   let view = progress_row(mtm, label, bucket.utilization, &reset_str);
@@ -43,7 +52,6 @@ pub fn bucket_row(mtm: MainThreadMarker, label: &str, bucket: &UsageBucket) -> R
 
 pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_str: &str) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
-  container.setFrameSize(NSSize::new(280.0, 48.0));
 
   // Label: "5h Limit  8%".
   let label_text = format!("{}  {}%", label, utilization as u32);
@@ -83,23 +91,27 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
 
   activate(&[
     // Container width.
-    &container.widthAnchor().constraintEqualToConstant(280.0),
+    &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
     // Label row: top, leading, trailing.
-    &label_field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 4.0),
-    &label_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
-    &label_field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
+    &label_field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 6.0),
+    &label_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &label_field
+      .trailingAnchor()
+      .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
     // Reset label: same row as label, right-aligned.
     &reset_field.topAnchor().constraintEqualToAnchor(&label_field.topAnchor()),
     &reset_field.leadingAnchor().constraintEqualToAnchor(&label_field.leadingAnchor()),
     &reset_field.trailingAnchor().constraintEqualToAnchor(&label_field.trailingAnchor()),
     // Progress bar: below label, pinned to sides.
-    &progress.topAnchor().constraintEqualToAnchor_constant(&label_field.bottomAnchor(), 4.0),
-    &progress.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
-    &progress.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
-    &progress.heightAnchor().constraintEqualToConstant(14.0),
+    &progress.topAnchor().constraintEqualToAnchor_constant(&label_field.bottomAnchor(), 2.0),
+    &progress.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &progress.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+    &progress.heightAnchor().constraintEqualToConstant(H_PADDING),
     // Container bottom.
-    &container.bottomAnchor().constraintEqualToAnchor_constant(&progress.bottomAnchor(), 6.0),
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&progress.bottomAnchor(), 2.0),
   ]);
+
+  layout(&container);
 
   return container;
 }
@@ -115,7 +127,6 @@ fn tier_badge_color(tier: SubscriptionTier) -> Retained<NSColor> {
 
 pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<SubscriptionTier>) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
-  container.setFrameSize(NSSize::new(280.0, 28.0));
 
   // Title label.
   let field = NSTextField::labelWithString(&NSString::from_str(title), mtm);
@@ -129,25 +140,19 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<SubscriptionT
   container.addSubview(&field);
 
   activate(&[
-    &container.widthAnchor().constraintEqualToConstant(280.0),
-    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
-    &field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
+    &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
+    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 4.0),
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&field.bottomAnchor(), 2.0),
   ]);
 
   // Tier badge.
   if let Some(tier) = tier {
     let badge_font = NSFont::systemFontOfSize_weight(10.0, font_weight_medium());
-    let badge_height: CGFloat = 18.0;
 
     let badge_view = NSView::init(mtm.alloc::<NSView>());
     badge_view.noAutoresize();
     badge_view.setWantsLayer(true);
-
-    if let Some(layer) = badge_view.layer() {
-      let color = tier_badge_color(tier);
-      layer.setBackgroundColor(Some(&color.CGColor()));
-      layer.setCornerRadius(badge_height / 2.0);
-    }
 
     container.addSubview(&badge_view);
 
@@ -162,26 +167,34 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<SubscriptionT
     badge_label.setAlignment(objc2_app_kit::NSTextAlignment::Center);
     badge_view.addSubview(&badge_label);
 
+    // Badge height is derived from the label's intrinsic height.
     activate(&[
       // Badge view: next to title, vertically centered.
       &badge_view.leadingAnchor().constraintEqualToAnchor_constant(&field.trailingAnchor(), 8.0),
-      &badge_view.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
-      &badge_view.heightAnchor().constraintEqualToConstant(badge_height),
-      // Badge label fills badge view with horizontal padding.
+      &badge_view.centerYAnchor().constraintEqualToAnchor(&field.centerYAnchor()),
+      // Badge label fills badge view with padding; badge height wraps label.
+      &badge_label.topAnchor().constraintEqualToAnchor_constant(&badge_view.topAnchor(), 1.0),
+      &badge_label.bottomAnchor().constraintEqualToAnchor_constant(&badge_view.bottomAnchor(), -1.0),
       &badge_label.leadingAnchor().constraintEqualToAnchor_constant(&badge_view.leadingAnchor(), 6.0),
       &badge_label.trailingAnchor().constraintEqualToAnchor_constant(&badge_view.trailingAnchor(), -6.0),
-      &badge_label.centerYAnchor().constraintEqualToAnchor_constant(&badge_view.centerYAnchor(), -1.0),
     ]);
+
+    // Round corners based on resolved height.
+    badge_view.layoutSubtreeIfNeeded();
+    if let Some(layer) = badge_view.layer() {
+      let color = tier_badge_color(tier);
+      layer.setBackgroundColor(Some(&color.CGColor()));
+      layer.setCornerRadius(badge_view.fittingSize().height / 2.0);
+    }
   }
 
-  activate(&[&container.heightAnchor().constraintEqualToConstant(28.0)]);
+  layout(&container);
 
   return container;
 }
 
 pub fn label_row(mtm: MainThreadMarker, text: &str, bold: bool) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
-  container.setFrameSize(NSSize::new(280.0, 22.0));
 
   let field = NSTextField::labelWithString(&NSString::from_str(text), mtm);
   field.setEditable(false);
@@ -196,19 +209,20 @@ pub fn label_row(mtm: MainThreadMarker, text: &str, bold: bool) -> Retained<NSVi
   container.addSubview(&field);
 
   activate(&[
-    &container.widthAnchor().constraintEqualToConstant(280.0),
-    &container.heightAnchor().constraintEqualToConstant(22.0),
-    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
-    &field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
-    &field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
+    &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
+    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+    &field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 3.0),
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&field.bottomAnchor(), 3.0),
   ]);
+
+  layout(&container);
 
   return container;
 }
 
 pub fn key_value_row(mtm: MainThreadMarker, key: &str, value: &str) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
-  container.setFrameSize(NSSize::new(280.0, 22.0));
 
   let key_field = NSTextField::labelWithString(&NSString::from_str(key), mtm);
   key_field.setEditable(false);
@@ -231,13 +245,17 @@ pub fn key_value_row(mtm: MainThreadMarker, key: &str, value: &str) -> Retained<
   container.addSubview(&value_field);
 
   activate(&[
-    &container.widthAnchor().constraintEqualToConstant(280.0),
-    &container.heightAnchor().constraintEqualToConstant(22.0),
-    &key_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
-    &key_field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
-    &value_field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
-    &value_field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
+    &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
+    &key_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &key_field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 3.0),
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&key_field.bottomAnchor(), 3.0),
+    &value_field
+      .trailingAnchor()
+      .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+    &value_field.centerYAnchor().constraintEqualToAnchor(&key_field.centerYAnchor()),
   ]);
+
+  layout(&container);
 
   return container;
 }
