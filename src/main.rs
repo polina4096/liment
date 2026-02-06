@@ -19,9 +19,9 @@ mod views;
 #[derive(Parser)]
 #[command()]
 struct CliArgs {
-  /// Read the token from the keychain and print it to stdout.
+  /// Print the token read from the keychain to stdout.
   #[arg(long)]
-  read_token: bool,
+  print_token: bool,
 
   /// Debug: cycle tray colors from 0% to 100% over ~10 seconds.
   #[arg(long)]
@@ -32,8 +32,8 @@ fn main() -> Result<()> {
   // Handle CLI.
   let args = CliArgs::parse();
 
-  if args.read_token {
-    print!("{}", fetch_keychain_token()?.expose_secret());
+  if args.print_token {
+    println!("Claude API Token: {}", fetch_keychain_token()?.expose_secret());
 
     return Ok(());
   }
