@@ -38,7 +38,7 @@ overflow-checks = false
 anyhow = "1.0.101"
 objc2 = "0.6.3"
 objc2-foundation = "0.3.2"
-objc2-app-kit = { version = "0.3.2", features = ["NSLayoutAnchor", "NSLayoutConstraint", "NSStackView"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSLayoutAnchor", "NSLayoutConstraint", "NSStackView"] }
 objc2-core-foundation = "0.3.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -46,5 +46,6 @@ ureq = "3"
 block2 = "0.6.2"
 objc2-quartz-core = { version = "0.3.2", features = ["objc2-core-graphics", "objc2-core-foundation"] }
 jiff = { version = "0.2.19", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
 security-framework = "3.5.1"
 secrecy = "0.10"

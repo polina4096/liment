@@ -1,6 +1,5 @@
-use std::{cell::RefCell, ptr::NonNull, thread};
+use std::cell::RefCell;
 
-use block2::RcBlock;
 use objc2::{
   DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
   rc::Retained,
@@ -14,11 +13,13 @@ use objc2_app_kit::{
 use objc2_foundation::{NSDefaultRunLoopMode, NSNotification, NSObjectProtocol, NSRunLoop, NSString, NSTimer};
 
 use crate::{
-  api::{self, ProfileResponse, UsageResponse},
+  api::{ApiClient, ProfileResponse, UsageResponse},
+  util::format_reset_time,
   views,
 };
 
 pub struct AppDelegateIvars {
+  api: ApiClient,
   status_item: RefCell<Option<Retained<NSStatusItem>>>,
   timer: RefCell<Option<Retained<NSTimer>>>,
 }
@@ -77,39 +78,23 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, api: ApiClient) -> Retained<Self> {
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
+      api,
       status_item: RefCell::new(None),
       timer: RefCell::new(None),
     });
+
     unsafe { msg_send![super(this), init] }
   }
 
   fn refresh(&self) {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let api = &self.ivars().api;
+    let usage = api.fetch_usage();
+    let profile = api.fetch_profile();
 
-    thread::spawn(move || {
-      let token = api::read_access_token();
-      let usage = token.as_ref().and_then(api::fetch_usage);
-      let profile = token.as_ref().and_then(api::fetch_profile);
-      let _ = tx.send((usage, profile));
-    });
-
-    // Poll for the result without blocking the run loop.
-    let delegate = self as *const AppDelegate;
-    let block = RcBlock::new(move |timer: NonNull<NSTimer>| {
-      if let Ok((usage, profile)) = rx.try_recv() {
-        unsafe { timer.as_ref().invalidate() };
-        let delegate = unsafe { &*delegate };
-        delegate.update_ui(usage, profile);
-      }
-    });
-
-    unsafe {
-      let timer = NSTimer::timerWithTimeInterval_repeats_block(0.25, true, &block);
-      NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSDefaultRunLoopMode);
-    }
+    self.update_ui(usage, profile);
   }
 
   fn update_ui(&self, usage: Option<UsageResponse>, profile: Option<ProfileResponse>) {
@@ -150,7 +135,7 @@ impl AppDelegate {
 
     // 5-hour usage
     if let Some(ref bucket) = usage.five_hour {
-      let reset_str = api::format_reset_time(&bucket.resets_at);
+      let reset_str = format_reset_time(&bucket.resets_at);
       let view = views::make_progress_row(mtm, "5h Limit", bucket.utilization, &reset_str);
       let item = NSMenuItem::new(mtm);
       item.setView(Some(&view));
@@ -159,7 +144,7 @@ impl AppDelegate {
 
     // 7-day overall usage
     if let Some(ref bucket) = usage.seven_day {
-      let reset_str = api::format_reset_time(&bucket.resets_at);
+      let reset_str = format_reset_time(&bucket.resets_at);
       let view = views::make_progress_row(mtm, "7d Limit", bucket.utilization, &reset_str);
       let item = NSMenuItem::new(mtm);
       item.setView(Some(&view));
@@ -168,7 +153,7 @@ impl AppDelegate {
 
     // 7-day sonnet usage
     if let Some(ref bucket) = usage.seven_day_sonnet {
-      let reset_str = api::format_reset_time(&bucket.resets_at);
+      let reset_str = format_reset_time(&bucket.resets_at);
       let view = views::make_progress_row(mtm, "7d Sonnet", bucket.utilization, &reset_str);
       let item = NSMenuItem::new(mtm);
       item.setView(Some(&view));
@@ -177,7 +162,7 @@ impl AppDelegate {
 
     // 7-day opus usage
     if let Some(ref bucket) = usage.seven_day_opus {
-      let reset_str = api::format_reset_time(&bucket.resets_at);
+      let reset_str = format_reset_time(&bucket.resets_at);
       let view = views::make_progress_row(mtm, "7d Opus", bucket.utilization, &reset_str);
       let item = NSMenuItem::new(mtm);
       item.setView(Some(&view));

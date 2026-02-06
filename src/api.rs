@@ -1,6 +1,5 @@
 use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
-use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -77,69 +76,36 @@ impl std::fmt::Display for SubscriptionTier {
   }
 }
 
-pub fn read_access_token() -> Option<SecretString> {
-  let results = ItemSearchOptions::new()
-    .class(ItemClass::generic_password())
-    .service("Claude Code-credentials")
-    .load_data(true)
-    .search()
-    .ok()?;
-
-  let data = results.into_iter().find_map(|r| {
-    match r {
-      SearchResult::Data(d) => Some(d),
-      _ => None,
-    }
-  })?;
-
-  let json_str = String::from_utf8(data).ok()?;
-  let value: serde_json::Value = serde_json::from_str(&json_str).ok()?;
-  value.get("claudeAiOauth")?.get("accessToken")?.as_str().map(|s| SecretString::from(s.to_owned()))
+pub struct ApiClient {
+  token: SecretString,
 }
 
-pub fn fetch_usage(token: &SecretString) -> Option<UsageResponse> {
-  let mut response = ureq::get("https://api.anthropic.com/api/oauth/usage")
-    .header("Authorization", &format!("Bearer {}", token.expose_secret()))
-    .header("anthropic-beta", "oauth-2025-04-20")
-    .header("Content-Type", "application/json")
-    .call()
-    .ok()?;
-
-  let body = response.body_mut().read_to_string().ok()?;
-  serde_json::from_str(&body).ok()
-}
-
-pub fn fetch_profile(token: &SecretString) -> Option<ProfileResponse> {
-  let mut response = ureq::get("https://api.anthropic.com/api/oauth/profile")
-    .header("Authorization", &format!("Bearer {}", token.expose_secret()))
-    .header("anthropic-beta", "oauth-2025-04-20")
-    .header("Content-Type", "application/json")
-    .call()
-    .ok()?;
-
-  let body = response.body_mut().read_to_string().ok()?;
-  serde_json::from_str(&body).ok()
-}
-
-pub fn format_reset_time(resets_at: &Timestamp) -> String {
-  let now = Timestamp::now();
-  let diff = resets_at.as_second() - now.as_second();
-
-  if diff <= 0 {
-    return "now".to_string();
+impl ApiClient {
+  pub fn new(token: SecretString) -> Self {
+    return Self { token };
   }
 
-  let days = diff / 86400;
-  let hours = (diff % 86400) / 3600;
-  let mins = (diff % 3600) / 60;
+  pub fn fetch_usage(&self) -> Option<UsageResponse> {
+    let mut response = ureq::get("https://api.anthropic.com/api/oauth/usage")
+      .header("Authorization", &format!("Bearer {}", self.token.expose_secret()))
+      .header("anthropic-beta", "oauth-2025-04-20")
+      .header("Content-Type", "application/json")
+      .call()
+      .ok()?;
 
-  if days > 0 {
-    format!("{}d {}h", days, hours)
+    let body = response.body_mut().read_to_string().ok()?;
+    serde_json::from_str(&body).ok()
   }
-  else if hours > 0 {
-    format!("{}h {}m", hours, mins)
-  }
-  else {
-    format!("{}m", mins)
+
+  pub fn fetch_profile(&self) -> Option<ProfileResponse> {
+    let mut response = ureq::get("https://api.anthropic.com/api/oauth/profile")
+      .header("Authorization", &format!("Bearer {}", self.token.expose_secret()))
+      .header("anthropic-beta", "oauth-2025-04-20")
+      .header("Content-Type", "application/json")
+      .call()
+      .ok()?;
+
+    let body = response.body_mut().read_to_string().ok()?;
+    serde_json::from_str(&body).ok()
   }
 }
