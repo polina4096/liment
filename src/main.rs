@@ -361,7 +361,7 @@ fn make_label_row(mtm: MainThreadMarker, text: &str, bold: bool) -> Retained<NSV
   field.setBezeled(false);
   field.setDrawsBackground(false);
 
-  let weight = if bold { font_weight_medium() } else { font_weight_regular() };
+  let weight = if bold { font_weight_semibold() } else { font_weight_regular() };
   let font = NSFont::systemFontOfSize_weight(12.0, weight);
   field.setFont(Some(&font));
   no_autoresize(&field);
@@ -374,6 +374,41 @@ fn make_label_row(mtm: MainThreadMarker, text: &str, bold: bool) -> Retained<NSV
     &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
     &field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
     &field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
+  ]);
+
+  container
+}
+
+fn make_key_value_row(mtm: MainThreadMarker, key: &str, value: &str) -> Retained<NSView> {
+  let container = NSView::init(mtm.alloc::<NSView>());
+  container.setFrameSize(NSSize::new(280.0, 22.0));
+
+  let key_field = NSTextField::labelWithString(&NSString::from_str(key), mtm);
+  key_field.setEditable(false);
+  key_field.setBezeled(false);
+  key_field.setDrawsBackground(false);
+  let font = NSFont::systemFontOfSize_weight(12.0, font_weight_regular());
+  key_field.setFont(Some(&font));
+  no_autoresize(&key_field);
+  container.addSubview(&key_field);
+
+  let value_field = NSTextField::labelWithString(&NSString::from_str(value), mtm);
+  value_field.setEditable(false);
+  value_field.setBezeled(false);
+  value_field.setDrawsBackground(false);
+  value_field.setFont(Some(&font));
+  value_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
+  value_field.setTextColor(Some(&NSColor::secondaryLabelColor()));
+  no_autoresize(&value_field);
+  container.addSubview(&value_field);
+
+  activate(&[
+    &container.widthAnchor().constraintEqualToConstant(280.0),
+    &container.heightAnchor().constraintEqualToConstant(22.0),
+    &key_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), 14.0),
+    &key_field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
+    &value_field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -14.0),
+    &value_field.centerYAnchor().constraintEqualToAnchor(&container.centerYAnchor()),
   ]);
 
   container
@@ -571,8 +606,8 @@ impl AppDelegate {
       header_item.setView(Some(&header_view));
       menu.addItem(&header_item);
 
-      let used_text = format!("Spent: ${:.2} / ${:.2} limit", used, limit);
-      let used_view = make_label_row(mtm, &used_text, false);
+      let value_text = format!("${:.2} / ${:.2}", used, limit);
+      let used_view = make_key_value_row(mtm, "Spent", &value_text);
       let used_item = NSMenuItem::new(mtm);
       used_item.setView(Some(&used_view));
       menu.addItem(&used_item);
