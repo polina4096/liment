@@ -1,4 +1,4 @@
-# anthropic-limits-tray
+# liment
 
 Simple tray application that shows Anthropic API usage limits.
 

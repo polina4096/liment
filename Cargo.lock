@@ -59,27 +59,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anthropic-limits-tray"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "block2",
- "clap",
- "jiff",
- "objc2",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-foundation",
- "objc2-quartz-core",
- "secrecy",
- "security-framework",
- "serde",
- "serde_json",
- "tap",
- "ureq",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -316,6 +295,27 @@ name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+
+[[package]]
+name = "liment"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "block2",
+ "clap",
+ "jiff",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-quartz-core",
+ "secrecy",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "tap",
+ "ureq",
+]
 
 [[package]]
 name = "log"
