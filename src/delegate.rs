@@ -66,9 +66,12 @@ define_class!(
 
         let p1 = ((secs + 3.7) % 10.0) / 10.0;
         let p2 = (secs % 10.0) / 10.0;
+        let v1 = (p1 * 100.0) as u32;
+        let v2 = (p2 * 100.0) as u32;
+        let w = (v1.max(1).ilog10() as usize + 1).max(v2.max(1).ilog10() as usize + 1);
         let img = Self::build_tray_image(
-          &format!("7d {}%", (p1 * 100.0) as u32), p1,
-          &format!("5h {}%", (p2 * 100.0) as u32), p2,
+          &format!("7d {:>w$}%", v1), p1,
+          &format!("5h {:>w$}%", v2), p2,
         );
 
         button.setImage(Some(&img));
@@ -146,8 +149,11 @@ impl AppDelegate {
       let five_h = usage.five_hour.as_ref().map(|b| b.utilization).unwrap_or(0.0);
       let seven_d = usage.seven_day.as_ref().map(|b| b.utilization).unwrap_or(0.0);
 
-      let line1 = format!("7d {}%", seven_d as u32);
-      let line2 = format!("5h {}%", five_h as u32);
+      let v1 = seven_d as u32;
+      let v2 = five_h as u32;
+      let w = (v1.max(1).ilog10() as usize + 1).max(v2.max(1).ilog10() as usize + 1);
+      let line1 = format!("7d {:>w$}%", v1);
+      let line2 = format!("5h {:>w$}%", v2);
 
       let five_p = five_h / 100.0;
       let seven_p = seven_d / 100.0;
