@@ -1,19 +1,22 @@
-use std::cell::OnceCell;
-
+use block2::RcBlock;
 use objc2::{
-  DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+  AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
   rc::Retained,
-  runtime::{AnyObject, NSObject},
-  sel,
+  runtime::{AnyObject, Bool, NSObject},
 };
 use objc2_app_kit::{
-  NSApplication, NSApplicationDelegate, NSFont, NSFontWeightSemibold, NSStatusBar, NSStatusItem,
-  NSVariableStatusItemLength,
+  NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSFont, NSFontAttributeName,
+  NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
 };
-use objc2_foundation::{NSDefaultRunLoopMode, NSNotification, NSObjectProtocol, NSRunLoop, NSString, NSTimer};
+use objc2_core_foundation::CGPoint;
+use objc2_foundation::{
+  NSAttributedString, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSString, NSTimer,
+};
 
 use crate::{
+  CliArgs,
   api::{ApiClient, ProfileResponse, UsageResponse},
+  util::schedule_timer,
   views,
 };
 
@@ -24,8 +27,8 @@ pub struct AppDelegateIvars {
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
 
-  /// Timer for refreshing the status bar item.
-  refresh_timer: OnceCell<Retained<NSTimer>>,
+  /// Configuration options from the command line arguments.
+  args: CliArgs,
 }
 
 define_class!(
@@ -47,6 +50,25 @@ define_class!(
 
       app.terminate(None);
     }
+
+    #[unsafe(method(onDebugTimer:))]
+    fn on_debug_timer(&self, _timer: &NSTimer) {
+      let mtm = self.mtm();
+
+      if let Some(button) = self.ivars().status_item.button(mtm) {
+        let secs = std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .unwrap_or_default()
+          .as_secs_f64();
+
+        let p = (secs % 10.0) / 10.0;
+        let label = format!("{}%", (p * 100.0) as u32);
+        let img = Self::build_tray_image(&format!("5h {label}"), p, &format!("7d {label}"), p);
+
+        button.setImage(Some(&img));
+      }
+    }
+
   }
 
   unsafe impl NSObjectProtocol for AppDelegate {}
@@ -54,41 +76,35 @@ define_class!(
   unsafe impl NSApplicationDelegate for AppDelegate {
     #[unsafe(method(applicationDidFinishLaunching:))]
     fn did_finish_launching(&self, _notification: &NSNotification) {
-      // First refresh + schedule timer.
+      // First refresh.
       self.refresh();
 
-      let timer = unsafe {
-        NSTimer::timerWithTimeInterval_target_selector_userInfo_repeats(60.0, self, sel!(onTimer:), None, true)
-      };
+      // Refresh UI every 60 seconds.
+      schedule_timer!(60.0, self, onTimer);
 
-      unsafe { NSRunLoop::currentRunLoop().addTimer_forMode(&timer, NSDefaultRunLoopMode) };
-
-      self.ivars().refresh_timer.set(timer).expect("Failed to set refresh timer.");
+      // Debug: cycle colors every 0.5s (20 steps over ~10s).
+      if self.ivars().args.cycle_colors {
+        schedule_timer!(0.5, self, onDebugTimer);
+      }
     }
   }
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, api: ApiClient) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, api: ApiClient, args: CliArgs) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
-    // Setup the app tray button.
+    // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      // Initialize the tray button with a loading placeholder.
-      button.setTitle(&NSString::from_str("L: ..."));
+      let img = Self::build_tray_image("5h ..", 0.0, "7d ..", 0.0);
 
-      let font = NSFont::monospacedSystemFontOfSize_weight(12.0, unsafe { NSFontWeightSemibold });
-
-      button.setFont(Some(&font));
+      button.setImage(Some(&img));
+      button.setTitle(&NSString::new());
     }
 
     let this = mtm.alloc::<AppDelegate>();
-    let this = this.set_ivars(AppDelegateIvars {
-      api,
-      status_item,
-      refresh_timer: OnceCell::new(),
-    });
+    let this = this.set_ivars(AppDelegateIvars { api, status_item, args });
 
     return unsafe { msg_send![super(this), init] };
   }
@@ -111,24 +127,88 @@ impl AppDelegate {
     else {
       // Handle failure to fetch usage data and reflect it in the tray button.
       if let Some(tray_button) = status_item.button(mtm) {
-        tray_button.setTitle(&NSString::from_str("L: ??"));
+        let img = Self::build_tray_image("5h --", 0.0, "7d --", 0.0);
+
+        tray_button.setImage(Some(&img));
       }
 
       return;
     };
 
-    // Update tray title with the most relevant utilization.
+    // Update tray title with per-bucket utilization, colored green-to-red.
     if let Some(tray_button) = status_item.button(mtm) {
       let five_h = usage.five_hour.as_ref().map(|b| b.utilization).unwrap_or(0.0);
       let seven_d = usage.seven_day.as_ref().map(|b| b.utilization).unwrap_or(0.0);
-      let display_pct = five_h.max(seven_d);
 
-      let title = format!("L: {}%", display_pct as u32);
-      tray_button.setTitle(&NSString::from_str(&title));
+      let line1 = format!("5h {}%", five_h as u32);
+      let line2 = format!("7d {}%", seven_d as u32);
+
+      let five_p = five_h / 100.0;
+      let seven_p = seven_d / 100.0;
+
+      let img = Self::build_tray_image(&line1, five_p, &line2, seven_p);
+
+      tray_button.setImage(Some(&img));
     }
 
     // Build and update the tray menu.
     let menu_view = views::menu(mtm, self, &profile, &usage);
+
     status_item.setMenu(Some(&menu_view));
+  }
+
+  /// Builds a two-line attributed string with per-line colors.
+  fn build_attributed_line(text: &str, p: f64) -> Retained<NSAttributedString> {
+    let font = NSFont::monospacedSystemFontOfSize_weight(9.0, unsafe { NSFontWeightSemibold });
+    let str = NSString::from_str(text);
+
+    let attr = unsafe { NSAttributedString::initWithString_attributes(NSAttributedString::alloc(), &str, None) };
+
+    // Wrap in mutable to add attributes.
+    let result = NSMutableAttributedString::initWithAttributedString(NSMutableAttributedString::alloc(), &attr);
+    let range = NSRange::new(0, str.len());
+
+    unsafe {
+      result.addAttribute_value_range(NSFontAttributeName, &font, range);
+      result.addAttribute_value_range(NSForegroundColorAttributeName, &Self::utilization_color(p), range);
+    }
+
+    // Upcast to immutable.
+    return Retained::into_super(result);
+  }
+
+  /// Renders two colored lines into an NSImage for the tray button.
+  /// Using an image instead of an attributed title allows macOS to properly
+  /// dim the content on inactive displays via menu bar compositing.
+  fn build_tray_image(line1: &str, p1: f64, line2: &str, p2: f64) -> Retained<NSImage> {
+    let attr1 = Self::build_attributed_line(line1, p1);
+    let attr2 = Self::build_attributed_line(line2, p2);
+
+    let size1 = attr1.size();
+    let size2 = attr2.size();
+
+    let line_height = 10.0_f64;
+    let (width, height) = (size1.width.max(size2.width).ceil(), line_height * 2.0);
+    let image_size = objc2_foundation::NSSize::new(width, height);
+
+    let block = RcBlock::new(move |_rect: objc2_foundation::NSRect| -> Bool {
+      attr1.drawAtPoint(CGPoint::new(0.0, line_height));
+      attr2.drawAtPoint(CGPoint::new(0.0, 0.0));
+
+      return Bool::YES;
+    });
+
+    return NSImage::imageWithSize_flipped_drawingHandler(image_size, true, &block);
+  }
+
+  /// Returns a system catalog color based on utilization level.
+  /// Uses catalog colors so macOS vibrancy compositing properly dims them on inactive displays.
+  fn utilization_color(pct: f64) -> Retained<NSColor> {
+    match pct {
+      p if p < 0.5 => NSColor::controlTextColor(),
+      p if p < 0.75 => NSColor::yellowColor(),
+      p if p < 0.90 => NSColor::orangeColor(),
+      _ => NSColor::redColor(),
+    }
   }
 }

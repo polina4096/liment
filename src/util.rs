@@ -1,8 +1,28 @@
+/// Creates a repeating `NSTimer`, adds it to the current run loop, and drops the reference.
+/// The run loop retains the timer, so it stays alive for the app's lifetime.
+///
+/// Usage: `schedule_timer!(interval_secs, target, selector)`
+macro_rules! schedule_timer {
+  ($interval:expr, $target:expr, $selector:ident) => {{
+    let timer = unsafe {
+      objc2_foundation::NSTimer::timerWithTimeInterval_target_selector_userInfo_repeats(
+        $interval, $target, objc2::sel!($selector:), None, true,
+      )
+    };
+
+    unsafe {
+      objc2_foundation::NSRunLoop::currentRunLoop()
+        .addTimer_forMode(&timer, objc2_foundation::NSDefaultRunLoopMode);
+    }
+  }};
+}
+
 use anyhow::{Context as _, Result};
 use jiff::Timestamp;
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSAlert, NSAlertStyle, NSView};
 use objc2_foundation::NSString;
+pub(crate) use schedule_timer;
 use secrecy::SecretString;
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::Deserialize;

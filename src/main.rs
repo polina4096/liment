@@ -18,15 +18,19 @@ mod views;
 
 #[derive(Parser)]
 #[command()]
-struct Args {
+struct CliArgs {
   /// Read the token from the keychain and print it to stdout.
   #[arg(long)]
   read_token: bool,
+
+  /// Debug: cycle tray colors from 0% to 100% over ~10 seconds.
+  #[arg(long)]
+  cycle_colors: bool,
 }
 
 fn main() -> Result<()> {
   // Handle CLI.
-  let args = Args::parse();
+  let args = CliArgs::parse();
 
   if args.read_token {
     print!("{}", fetch_keychain_token()?.expose_secret());
@@ -43,7 +47,7 @@ fn main() -> Result<()> {
   let token = get_claude_token(mtm)?;
   let api = ApiClient::new(token);
 
-  let delegate = AppDelegate::new(mtm, api);
+  let delegate = AppDelegate::new(mtm, api, args);
   let delegate = ProtocolObject::from_ref(&*delegate);
   app.setDelegate(Some(delegate));
 

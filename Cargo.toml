@@ -37,8 +37,8 @@ overflow-checks = false
 [dependencies]
 anyhow = "1.0.101"
 objc2 = "0.6.3"
-objc2-foundation = "0.3.2"
-objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSLayoutAnchor", "NSLayoutConstraint", "NSStackView"] }
+objc2-foundation = { version = "0.3.2", features = ["NSAttributedString", "NSDictionary", "NSRange", "NSString"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSWindow", "block2", "objc2-core-foundation"] }
 objc2-core-foundation = "0.3.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
