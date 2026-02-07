@@ -53,7 +53,7 @@ impl SearchResultExt for SearchResult {
 
 pub fn get_claude_token(mtm: MainThreadMarker) -> Result<SecretString> {
   // Use environment variable set string if available.
-  if let Ok(token) = std::env::var("ANTHROPIC_LIMITS_TRAY_TOKEN") {
+  if let Ok(token) = std::env::var("LIMENT_TOKEN") {
     return Ok(SecretString::from(token));
   }
 
