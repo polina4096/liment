@@ -184,7 +184,7 @@ impl AppDelegate {
       let five_p = five_h / 100.0;
       let seven_p = seven_d / 100.0;
 
-      let img = Self::build_tray_image(&line1, five_p, &line2, seven_p);
+      let img = Self::build_tray_image(&line1, seven_p, &line2, five_p);
 
       tray_button.setImage(Some(&img));
     }
