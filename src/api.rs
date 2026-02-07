@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
@@ -81,12 +81,12 @@ impl std::fmt::Display for SubscriptionTier {
 }
 
 pub struct ApiClient {
-  token: RefCell<SecretString>,
+  token: Mutex<SecretString>,
 }
 
 impl ApiClient {
   pub fn new(token: SecretString) -> Self {
-    return Self { token: RefCell::new(token) };
+    return Self { token: Mutex::new(token) };
   }
 
   pub fn fetch_usage(&self) -> Option<UsageResponse> {
@@ -108,7 +108,7 @@ impl ApiClient {
     // Refetch from the keychain and retry once.
     if let Err(ureq::Error::StatusCode(401)) = &result {
       if let Ok(new_token) = fetch_keychain_token() {
-        *self.token.borrow_mut() = new_token;
+        *self.token.lock().unwrap() = new_token;
         return self.get_inner(url).inspect_err(|e| eprintln!("Error: {}", e)).ok();
       }
     }
@@ -118,7 +118,7 @@ impl ApiClient {
 
   /// Perform API GET request without token refresh logic.
   fn get_inner(&self, url: &str) -> Result<String, ureq::Error> {
-    let token = self.token.borrow();
+    let token = self.token.lock().unwrap();
     let mut response = ureq::get(url)
       .header("Authorization", &format!("Bearer {}", token.expose_secret()))
       .header("anthropic-beta", "oauth-2025-04-20")

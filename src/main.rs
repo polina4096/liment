@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use objc2::{MainThreadMarker, runtime::ProtocolObject};
@@ -45,7 +47,7 @@ fn main() -> Result<()> {
   app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
   let token = get_claude_token(mtm)?;
-  let api = ApiClient::new(token);
+  let api = Arc::new(ApiClient::new(token));
 
   let delegate = AppDelegate::new(mtm, api, args);
   let delegate = ProtocolObject::from_ref(&*delegate);

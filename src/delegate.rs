@@ -1,8 +1,10 @@
 use std::ffi::c_void;
+use std::sync::Arc;
 
 use block2::RcBlock;
+use dispatch2::{DispatchQueue, MainThreadBound};
 use objc2::{
-  AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+  AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
   rc::Retained,
   runtime::{AnyObject, Bool, NSObject},
 };
@@ -15,6 +17,7 @@ use objc2_foundation::{
   NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
   NSString, NSTimer,
 };
+use tap::Tap;
 
 use crate::{
   CliArgs,
@@ -25,7 +28,7 @@ use crate::{
 
 pub struct AppDelegateIvars {
   /// A client to fetch information from the API.
-  api: ApiClient,
+  api: Arc<ApiClient>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
@@ -49,9 +52,20 @@ define_class!(
 
     #[unsafe(method(onQuit:))]
     fn on_quit(&self, _sender: &AnyObject) {
-      let app = NSApplication::sharedApplication(MainThreadMarker::from(self));
+      let app = NSApplication::sharedApplication(self.mtm());
 
       app.terminate(None);
+    }
+
+    #[unsafe(method(onRefresh:))]
+    fn on_refresh(&self, _sender: &AnyObject) {
+      self.refresh();
+
+      // Reopen the menu so the user sees the update in-place.
+      let mtm = self.mtm();
+      if let Some(button) = self.ivars().status_item.button(mtm) {
+        unsafe { button.performClick(None) };
+      }
     }
 
     #[unsafe(method(onDebugTimer:))]
@@ -100,7 +114,7 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, api: ApiClient, args: CliArgs) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, api: Arc<ApiClient>, args: CliArgs) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
@@ -114,17 +128,30 @@ impl AppDelegate {
 
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars { api, status_item, args });
+    let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
-    return unsafe { msg_send![super(this), init] };
+    // Set initial menu so the tray is interactive while loading.
+    let loading_menu = views::loading_menu(mtm, &this);
+    this.ivars().status_item.setMenu(Some(&loading_menu));
+
+    return this;
   }
 
   /// Refetches latest data from the API and updates the UI.
   fn refresh(&self) {
-    let api = &self.ivars().api;
-    let usage = api.fetch_usage();
-    let profile = api.fetch_profile();
+    let api = Arc::clone(&self.ivars().api);
+    let mtm = self.mtm();
+    let this = MainThreadBound::new(self.retain(), mtm);
 
-    self.rebuild_ui(usage, profile);
+    std::thread::spawn(move || {
+      let usage = api.fetch_usage();
+      let profile = api.fetch_profile();
+
+      DispatchQueue::main().exec_async(move || {
+        let mtm = MainThreadMarker::new().expect("Must be on main thread.");
+        this.get(mtm).rebuild_ui(usage, profile);
+      });
+    });
   }
 
   /// Rebuilds the UI.
@@ -132,8 +159,7 @@ impl AppDelegate {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
-    let Some(usage) = usage
-    else {
+    let Some(usage) = usage else {
       // Handle failure to fetch usage data and reflect it in the tray button.
       if let Some(tray_button) = status_item.button(mtm) {
         let img = Self::build_tray_image("7d --", 0.0, "5h --", 0.0);
@@ -163,10 +189,14 @@ impl AppDelegate {
       tray_button.setImage(Some(&img));
     }
 
-    // Build and update the tray menu.
-    let menu_view = views::menu(mtm, self, &profile, &usage);
+    // Build and update the tray menu in-place so an open menu updates live.
+    let menu = status_item.menu(mtm).unwrap_or_else(|| {
+      return objc2_app_kit::NSMenu::new(mtm).tap(|menu| {
+        status_item.setMenu(Some(&menu));
+      });
+    });
 
-    status_item.setMenu(Some(&menu_view));
+    views::populate_menu(&menu, mtm, self, &profile, &usage);
   }
 
   /// Builds a two-line attributed string with per-line colors.

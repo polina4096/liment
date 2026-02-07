@@ -40,6 +40,7 @@ anyhow = { version = "1.0.101" }
 clap = { version = "4.5.57", features = ["derive"] }
 secrecy = { version = "0.10.3" }
 block2 = { version = "0.6.2" }
+dispatch2 = { version = "0.3.0" }
 objc2 = { version = "0.6.3" }
 objc2-core-foundation = { version = "0.3.2" }
 objc2-foundation = { version = "0.3.2", features = ["NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSString"] }
