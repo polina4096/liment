@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (aarch64)
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Build & Package .app
+        run: ./scripts/package.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/Liment.app.zip
+          generate_release_notes: true
