@@ -1,6 +1,10 @@
+use std::cell::RefCell;
+
 use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+
+use crate::util::fetch_keychain_token;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageResponse {
@@ -77,35 +81,50 @@ impl std::fmt::Display for SubscriptionTier {
 }
 
 pub struct ApiClient {
-  token: SecretString,
+  token: RefCell<SecretString>,
 }
 
 impl ApiClient {
   pub fn new(token: SecretString) -> Self {
-    return Self { token };
+    return Self { token: RefCell::new(token) };
   }
 
   pub fn fetch_usage(&self) -> Option<UsageResponse> {
-    let mut response = ureq::get("https://api.anthropic.com/api/oauth/usage")
-      .header("Authorization", &format!("Bearer {}", self.token.expose_secret()))
-      .header("anthropic-beta", "oauth-2025-04-20")
-      .header("Content-Type", "application/json")
-      .call()
-      .ok()?;
-
-    let body = response.body_mut().read_to_string().ok()?;
+    let body = self.get("https://api.anthropic.com/api/oauth/usage")?;
     serde_json::from_str(&body).ok()
   }
 
   pub fn fetch_profile(&self) -> Option<ProfileResponse> {
-    let mut response = ureq::get("https://api.anthropic.com/api/oauth/profile")
-      .header("Authorization", &format!("Bearer {}", self.token.expose_secret()))
+    let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
+    serde_json::from_str(&body).ok()
+  }
+
+  /// Performs an authenticated GET request. On a 401 (token revoked),
+  /// refetches the token from the keychain and retries once.
+  fn get(&self, url: &str) -> Option<String> {
+    let result = self.get_inner(url);
+
+    // If the request failed with a 401, the token may have been rotated.
+    // Refetch from the keychain and retry once.
+    if let Err(ureq::Error::StatusCode(401)) = &result {
+      if let Ok(new_token) = fetch_keychain_token() {
+        *self.token.borrow_mut() = new_token;
+        return self.get_inner(url).inspect_err(|e| eprintln!("Error: {}", e)).ok();
+      }
+    }
+
+    return result.ok();
+  }
+
+  /// Perform API GET request without token refresh logic.
+  fn get_inner(&self, url: &str) -> Result<String, ureq::Error> {
+    let token = self.token.borrow();
+    let mut response = ureq::get(url)
+      .header("Authorization", &format!("Bearer {}", token.expose_secret()))
       .header("anthropic-beta", "oauth-2025-04-20")
       .header("Content-Type", "application/json")
-      .call()
-      .ok()?;
+      .call()?;
 
-    let body = response.body_mut().read_to_string().ok()?;
-    serde_json::from_str(&body).ok()
+    return response.body_mut().read_to_string();
   }
 }
