@@ -34,7 +34,15 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
   let absolute_time = app.ivars().reset_time_format == "absolute";
   for window in &data.windows {
     let display_util = if is_remaining { 100.0 - window.utilization } else { window.utilization };
-    menu.addItem(&components::bucket_row(mtm, &window.title, display_util, &window.resets_at, if show_period_pct { window.period_seconds } else { None }, absolute_time, is_remaining));
+    menu.addItem(&components::bucket_row(
+      mtm,
+      &window.title,
+      display_util,
+      &window.resets_at,
+      if show_period_pct { window.period_seconds } else { None },
+      absolute_time,
+      is_remaining,
+    ));
   }
 
   // API / extra usage.

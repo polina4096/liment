@@ -39,6 +39,10 @@ struct Config {
   #[serde(default = "default_reset_time_format")]
   reset_time_format: String,
 
+  /// How often to refetch usage data, in seconds.
+  #[serde(default = "default_refetch_interval")]
+  refetch_interval: f64,
+
   /// List of provider definitions.
   #[serde(default = "default_providers")]
   providers: Vec<ProviderDef>,
@@ -59,6 +63,10 @@ fn default_reset_time_format() -> String {
   "relative".to_string()
 }
 
+fn default_refetch_interval() -> f64 {
+  60.0
+}
+
 impl Default for Config {
   fn default() -> Self {
     Self {
@@ -67,6 +75,7 @@ impl Default for Config {
       display_mode: default_display_mode(),
       show_period_percentage: false,
       reset_time_format: default_reset_time_format(),
+      refetch_interval: default_refetch_interval(),
       providers: default_providers(),
     }
   }
@@ -120,6 +129,7 @@ pub struct AppConfig {
   pub display_mode: String,
   pub show_period_percentage: bool,
   pub reset_time_format: String,
+  pub refetch_interval: f64,
 }
 
 pub fn create_providers() -> Result<AppConfig> {
@@ -149,5 +159,6 @@ pub fn create_providers() -> Result<AppConfig> {
     display_mode: config.display_mode,
     show_period_percentage: config.show_period_percentage,
     reset_time_format: config.reset_time_format,
+    refetch_interval: config.refetch_interval,
   });
 }

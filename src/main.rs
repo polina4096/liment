@@ -35,8 +35,7 @@ fn main() -> Result<()> {
 
   let app_config = create_providers()?;
 
-  let delegate =
-    AppDelegate::new(mtm, app_config.menubar_provider, args, app_config.monochrome_icon, &app_config.display_mode, app_config.show_period_percentage, &app_config.reset_time_format);
+  let delegate = AppDelegate::new(mtm, args, &app_config);
   let delegate = ProtocolObject::from_ref(&*delegate);
   app.setDelegate(Some(delegate));
 
