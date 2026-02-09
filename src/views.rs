@@ -1,4 +1,4 @@
-use objc2::{MainThreadMarker, rc::Retained, sel};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
 use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tap::Tap as _;
@@ -29,8 +29,10 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
   menu.addItem(&header_item);
 
   // Usage windows.
+  let is_remaining = app.ivars().display_mode == "remaining";
   for window in &data.windows {
-    menu.addItem(&components::bucket_row(mtm, &window.title, window.utilization, &window.resets_at));
+    let display_util = if is_remaining { 100.0 - window.utilization } else { window.utilization };
+    menu.addItem(&components::bucket_row(mtm, &window.title, display_util, &window.resets_at));
   }
 
   // API / extra usage.
