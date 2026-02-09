@@ -35,6 +35,9 @@ pub struct AppDelegateIvars {
 
   /// Configuration options from the command line arguments.
   args: CliArgs,
+
+  /// Whether to render the tray icon in monochrome.
+  monochrome_icon: bool,
 }
 
 define_class!(
@@ -94,6 +97,7 @@ define_class!(
         let img = Self::build_tray_image(
           &format!("7d {:>w$}%", v1), p1,
           &format!("5h {:>w$}%", v2), p2,
+          self.ivars().monochrome_icon,
         );
 
         button.setImage(Some(&img));
@@ -122,21 +126,31 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, provider: Arc<dyn UsageProvider>, args: CliArgs) -> Retained<Self> {
+  pub fn new(
+    mtm: MainThreadMarker,
+    provider: Arc<dyn UsageProvider>,
+    args: CliArgs,
+    monochrome_icon: bool,
+  ) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
       let ph = provider.placeholder_lines();
-      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0);
+      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0, monochrome_icon);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
     }
 
     let this = mtm.alloc::<AppDelegate>();
-    let this = this.set_ivars(AppDelegateIvars { provider, status_item, args });
+    let this = this.set_ivars(AppDelegateIvars {
+      provider,
+      status_item,
+      args,
+      monochrome_icon,
+    });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
     // Set initial menu so the tray is interactive while loading.
@@ -169,7 +183,13 @@ impl AppDelegate {
     let Some(data) = data else {
       if let Some(tray_button) = status_item.button(mtm) {
         let ph = self.ivars().provider.placeholder_lines();
-        let img = Self::build_tray_image(&ph[0].replace("..", "--"), 0.0, &ph[1].replace("..", "--"), 0.0);
+        let img = Self::build_tray_image(
+          &ph[0].replace("..", "--"),
+          0.0,
+          &ph[1].replace("..", "--"),
+          0.0,
+          self.ivars().monochrome_icon,
+        );
         tray_button.setImage(Some(&img));
       }
       return;
@@ -192,7 +212,7 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0);
+      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, self.ivars().monochrome_icon);
       tray_button.setImage(Some(&img));
     }
 
@@ -228,7 +248,7 @@ impl AppDelegate {
   /// Renders the Claude logo and two colored lines into an NSImage for the tray button.
   /// Using an image instead of an attributed title allows macOS to properly
   /// dim the content on inactive displays via menu bar compositing.
-  fn build_tray_image(line1: &str, p1: f64, line2: &str, p2: f64) -> Retained<NSImage> {
+  fn build_tray_image(line1: &str, p1: f64, line2: &str, p2: f64, monochrome: bool) -> Retained<NSImage> {
     let attr1 = Self::build_attributed_line(line1, p1);
     let attr2 = Self::build_attributed_line(line2, p2);
 
@@ -256,6 +276,9 @@ impl AppDelegate {
     let logo_data = unsafe { NSData::dataWithBytes_length(svg_bytes.as_ptr() as *const c_void, svg_bytes.len()) };
     let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load Claude logo");
     logo_img.setSize(NSSize::new(logo_size, logo_size));
+    if monochrome {
+      logo_img.setTemplate(true);
+    }
 
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
       // Draw logo on the left, vertically centered.
@@ -270,7 +293,11 @@ impl AppDelegate {
       return Bool::YES;
     });
 
-    return NSImage::imageWithSize_flipped_drawingHandler(image_size, false, &block);
+    let img = NSImage::imageWithSize_flipped_drawingHandler(image_size, false, &block);
+    if monochrome {
+      img.setTemplate(true);
+    }
+    return img;
   }
 
   /// Returns a system catalog color based on utilization level.

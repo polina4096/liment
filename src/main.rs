@@ -33,9 +33,9 @@ fn main() -> Result<()> {
   let app = NSApplication::sharedApplication(mtm);
   app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
-  let (menubar_provider, _all_providers) = create_providers()?;
+  let app_config = create_providers()?;
 
-  let delegate = AppDelegate::new(mtm, menubar_provider, args);
+  let delegate = AppDelegate::new(mtm, app_config.menubar_provider, args, app_config.monochrome_icon);
   let delegate = ProtocolObject::from_ref(&*delegate);
   app.setDelegate(Some(delegate));
 

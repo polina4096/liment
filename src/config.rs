@@ -23,6 +23,10 @@ struct Config {
   #[serde(default)]
   menubar_provider: usize,
 
+  /// Whether to render the tray icon in monochrome.
+  #[serde(default)]
+  monochrome_icon: bool,
+
   /// List of provider definitions.
   #[serde(default = "default_providers")]
   providers: Vec<ProviderDef>,
@@ -39,6 +43,7 @@ impl Default for Config {
   fn default() -> Self {
     Self {
       menubar_provider: 0,
+      monochrome_icon: false,
       providers: default_providers(),
     }
   }
@@ -46,7 +51,7 @@ impl Default for Config {
 
 fn config_path() -> PathBuf {
   let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
-  return base.join("liment").join("providers.toml");
+  return base.join("liment").join("config.toml");
 }
 
 const DEFAULT_CONFIG: &str = "\
@@ -85,7 +90,13 @@ fn load_config() -> Config {
   }
 }
 
-pub fn create_providers() -> Result<(Arc<dyn UsageProvider>, Vec<Arc<dyn UsageProvider>>)> {
+pub struct AppConfig {
+  pub menubar_provider: Arc<dyn UsageProvider>,
+  pub all_providers: Vec<Arc<dyn UsageProvider>>,
+  pub monochrome_icon: bool,
+}
+
+pub fn create_providers() -> Result<AppConfig> {
   let config = load_config();
 
   if config.providers.is_empty() {
@@ -105,5 +116,9 @@ pub fn create_providers() -> Result<(Arc<dyn UsageProvider>, Vec<Arc<dyn UsagePr
 
   let menubar = Arc::clone(&providers[config.menubar_provider]);
 
-  return Ok((menubar, providers));
+  return Ok(AppConfig {
+    menubar_provider: menubar,
+    all_providers: providers,
+    monochrome_icon: config.monochrome_icon,
+  });
 }
