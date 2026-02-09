@@ -20,7 +20,8 @@ use objc2_foundation::{
 use tap::Tap;
 
 use crate::{
-  CliArgs, config,
+  CliArgs,
+  config::{self, AppConfig},
   providers::{UsageData, UsageProvider},
   utils::macos::schedule_timer,
   views,
@@ -47,6 +48,9 @@ pub struct AppDelegateIvars {
 
   /// Reset time format: "relative" or "absolute".
   pub reset_time_format: String,
+
+  /// Refetch interval in seconds.
+  pub refetch_interval: f64,
 }
 
 define_class!(
@@ -123,8 +127,8 @@ define_class!(
       // First refresh.
       self.refresh();
 
-      // Refresh UI every 60 seconds.
-      schedule_timer!(60.0, self, onTimer);
+      // Refresh UI periodically.
+      schedule_timer!(self.ivars().refetch_interval, self, onTimer);
 
       // Debug: cycle colors every 0.5s (20 steps over ~10s).
       if self.ivars().args.cycle_colors {
@@ -135,22 +139,14 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(
-    mtm: MainThreadMarker,
-    provider: Arc<dyn UsageProvider>,
-    args: CliArgs,
-    monochrome_icon: bool,
-    display_mode: &str,
-    show_period_percentage: bool,
-    reset_time_format: &str,
-  ) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, args: CliArgs, config: &AppConfig) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let ph = provider.placeholder_lines();
-      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0, monochrome_icon);
+      let ph = config.menubar_provider.placeholder_lines();
+      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0, config.monochrome_icon);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
@@ -158,13 +154,14 @@ impl AppDelegate {
 
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
-      provider,
+      provider: Arc::clone(&config.menubar_provider),
       status_item,
       args,
-      monochrome_icon,
-      display_mode: display_mode.to_string(),
-      show_period_percentage,
-      reset_time_format: reset_time_format.to_string(),
+      monochrome_icon: config.monochrome_icon,
+      display_mode: config.display_mode.clone(),
+      show_period_percentage: config.show_period_percentage,
+      reset_time_format: config.reset_time_format.clone(),
+      refetch_interval: config.refetch_interval,
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
