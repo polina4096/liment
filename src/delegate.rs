@@ -20,15 +20,15 @@ use objc2_foundation::{
 use tap::Tap;
 
 use crate::{
-  CliArgs,
-  api::{ApiClient, ProfileResponse, UsageResponse},
-  util::schedule_timer,
+  CliArgs, config,
+  providers::{UsageData, UsageProvider},
+  utils::macos::schedule_timer,
   views,
 };
 
 pub struct AppDelegateIvars {
-  /// A client to fetch information from the API.
-  api: Arc<ApiClient>,
+  /// Provider to fetch usage data.
+  provider: Arc<dyn UsageProvider>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
@@ -66,6 +66,14 @@ define_class!(
       if let Some(button) = self.ivars().status_item.button(mtm) {
         unsafe { button.performClick(None) };
       }
+    }
+
+    #[unsafe(method(onOpenConfig:))]
+    fn on_open_config(&self, _sender: &AnyObject) {
+      let path = config::get_config_path();
+      let url = objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+      let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+      workspace.activateFileViewerSelectingURLs(&objc2_foundation::NSArray::from_retained_slice(&[url]));
     }
 
     #[unsafe(method(onDebugTimer:))]
@@ -114,20 +122,21 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, api: Arc<ApiClient>, args: CliArgs) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, provider: Arc<dyn UsageProvider>, args: CliArgs) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let img = Self::build_tray_image("7d ..", 0.0, "5h ..", 0.0);
+      let ph = provider.placeholder_lines();
+      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
     }
 
     let this = mtm.alloc::<AppDelegate>();
-    let this = this.set_ivars(AppDelegateIvars { api, status_item, args });
+    let this = this.set_ivars(AppDelegateIvars { provider, status_item, args });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
     // Set initial menu so the tray is interactive while loading.
@@ -139,64 +148,61 @@ impl AppDelegate {
 
   /// Refetches latest data from the API and updates the UI.
   fn refresh(&self) {
-    let api = Arc::clone(&self.ivars().api);
+    let provider = Arc::clone(&self.ivars().provider);
     let mtm = self.mtm();
     let this = MainThreadBound::new(self.retain(), mtm);
 
     std::thread::spawn(move || {
-      let usage = api.fetch_usage();
-      let profile = api.fetch_profile();
+      let data = provider.fetch_data();
 
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread.");
-        this.get(mtm).rebuild_ui(usage, profile);
+        this.get(mtm).rebuild_ui(data);
       });
     });
   }
 
-  /// Rebuilds the UI.
-  fn rebuild_ui(&self, usage: Option<UsageResponse>, profile: Option<ProfileResponse>) {
+  fn rebuild_ui(&self, data: Option<UsageData>) {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
-    let Some(usage) = usage else {
-      // Handle failure to fetch usage data and reflect it in the tray button.
+    let Some(data) = data else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image("7d --", 0.0, "5h --", 0.0);
-
+        let ph = self.ivars().provider.placeholder_lines();
+        let img = Self::build_tray_image(&ph[0].replace("..", "--"), 0.0, &ph[1].replace("..", "--"), 0.0);
         tray_button.setImage(Some(&img));
       }
-
       return;
     };
 
-    // Update tray title with per-bucket utilization, colored green-to-red.
     if let Some(tray_button) = status_item.button(mtm) {
-      let five_h = usage.five_hour.as_ref().map(|b| b.utilization).unwrap_or(0.0);
-      let seven_d = usage.seven_day.as_ref().map(|b| b.utilization).unwrap_or(0.0);
+      // Use first two windows that have a short_title for tray display.
+      let mut tray_windows = data.windows.iter().filter(|w| w.short_title.is_some());
+      let w0 = tray_windows.next();
+      let w1 = tray_windows.next();
+      let p0 = w0.map(|w| w.utilization).unwrap_or(0.0);
+      let p1 = w1.map(|w| w.utilization).unwrap_or(0.0);
 
-      let v1 = seven_d as u32;
-      let v2 = five_h as u32;
-      let w = (v1.max(1).ilog10() as usize + 1).max(v2.max(1).ilog10() as usize + 1);
-      let line1 = format!("7d {:>w$}%", v1);
-      let line2 = format!("5h {:>w$}%", v2);
+      let v0 = p0 as u32;
+      let v1 = p1 as u32;
+      let w = (v0.max(1).ilog10() as usize + 1).max(v1.max(1).ilog10() as usize + 1);
 
-      let five_p = five_h / 100.0;
-      let seven_p = seven_d / 100.0;
+      let label0 = w0.and_then(|w| w.short_title.as_deref()).unwrap_or("--");
+      let label1 = w1.and_then(|w| w.short_title.as_deref()).unwrap_or("--");
+      let line1 = format!("{} {:>w$}%", label0, v0);
+      let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, seven_p, &line2, five_p);
-
+      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0);
       tray_button.setImage(Some(&img));
     }
 
-    // Build and update the tray menu in-place so an open menu updates live.
     let menu = status_item.menu(mtm).unwrap_or_else(|| {
       return objc2_app_kit::NSMenu::new(mtm).tap(|menu| {
         status_item.setMenu(Some(&menu));
       });
     });
 
-    views::populate_menu(&menu, mtm, self, &profile, &usage);
+    views::populate_menu(&menu, mtm, self, &data);
   }
 
   /// Builds a two-line attributed string with per-line colors.
@@ -264,7 +270,7 @@ impl AppDelegate {
       return Bool::YES;
     });
 
-    return NSImage::imageWithSize_flipped_drawingHandler(image_size, true, &block);
+    return NSImage::imageWithSize_flipped_drawingHandler(image_size, false, &block);
   }
 
   /// Returns a system catalog color based on utilization level.
