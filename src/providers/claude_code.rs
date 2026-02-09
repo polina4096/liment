@@ -100,6 +100,6 @@ impl UsageProvider for ClaudeCodeProvider {
   }
 
   fn placeholder_lines(&self) -> [&str; 2] {
-    ["7d ..", "5h .."]
+    ["5h", "7d"]
   }
 }
