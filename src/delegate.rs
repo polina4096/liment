@@ -146,7 +146,8 @@ impl AppDelegate {
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
       let ph = config.menubar_provider.placeholder_lines();
-      let img = Self::build_tray_image(ph[0], 0.0, ph[1], 0.0, config.monochrome_icon);
+      let img =
+        Self::build_tray_image(&format!("{} ..", ph[0]), 0.0, &format!("{} ..", ph[1]), 0.0, config.monochrome_icon);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
@@ -196,9 +197,9 @@ impl AppDelegate {
       if let Some(tray_button) = status_item.button(mtm) {
         let ph = self.ivars().provider.placeholder_lines();
         let img = Self::build_tray_image(
-          &ph[0].replace("..", "--"),
+          &format!("{} --", ph[0]),
           0.0,
-          &ph[1].replace("..", "--"),
+          &format!("{} --", ph[1]),
           0.0,
           self.ivars().monochrome_icon,
         );
