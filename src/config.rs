@@ -1,0 +1,164 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::{Result, bail};
+use serde::Deserialize;
+
+use crate::providers::{UsageProvider, create_provider};
+
+#[derive(Deserialize, Clone)]
+pub struct ProviderDef {
+  /// Provider type identifier (e.g. "claude_code").
+  #[serde(rename = "type")]
+  pub provider_type: String,
+
+  /// Provider-specific configuration.
+  #[serde(flatten)]
+  pub config: toml::Table,
+}
+
+#[derive(Deserialize)]
+struct Config {
+  /// Which provider to show in the menubar (by index into `providers`).
+  #[serde(default)]
+  menubar_provider: usize,
+
+  /// Whether to render the tray icon in monochrome.
+  #[serde(default)]
+  monochrome_icon: bool,
+
+  /// Display mode: "usage" or "remaining" (default: "usage").
+  #[serde(default = "default_display_mode")]
+  display_mode: String,
+
+  /// Whether to show period percentage next to "resets in".
+  #[serde(default)]
+  show_period_percentage: bool,
+
+  /// Reset time format: "relative" (resets in 3h) or "absolute" (resets on 13 Feb, 14:00).
+  #[serde(default = "default_reset_time_format")]
+  reset_time_format: String,
+
+  /// How often to refetch usage data, in seconds.
+  #[serde(default = "default_refetch_interval")]
+  refetch_interval: f64,
+
+  /// List of provider definitions.
+  #[serde(default = "default_providers")]
+  providers: Vec<ProviderDef>,
+}
+
+fn default_providers() -> Vec<ProviderDef> {
+  vec![ProviderDef {
+    provider_type: "claude_code".to_string(),
+    config: toml::Table::new(),
+  }]
+}
+
+fn default_display_mode() -> String {
+  "usage".to_string()
+}
+
+fn default_reset_time_format() -> String {
+  "relative".to_string()
+}
+
+fn default_refetch_interval() -> f64 {
+  60.0
+}
+
+impl Default for Config {
+  fn default() -> Self {
+    Self {
+      menubar_provider: 0,
+      monochrome_icon: false,
+      display_mode: default_display_mode(),
+      show_period_percentage: false,
+      reset_time_format: default_reset_time_format(),
+      refetch_interval: default_refetch_interval(),
+      providers: default_providers(),
+    }
+  }
+}
+
+fn config_path() -> PathBuf {
+  let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
+  return base.join("liment").join("config.toml");
+}
+
+const DEFAULT_CONFIG: &str = "\
+# Which provider to show in the menubar (index into [[providers]]).
+menubar_provider = 0
+
+[[providers]]
+type = \"claude_code\"
+";
+
+/// Creates the config file with defaults if it doesn't exist. Returns the path.
+pub fn ensure_config_file() -> PathBuf {
+  let path = config_path();
+  if !path.exists() {
+    if let Some(parent) = path.parent() {
+      let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, DEFAULT_CONFIG);
+  }
+  return path;
+}
+
+/// Returns the config file path (for opening in Finder).
+pub fn get_config_path() -> PathBuf {
+  return config_path();
+}
+
+fn load_config() -> Config {
+  let path = config_path();
+  match std::fs::read_to_string(&path) {
+    Ok(contents) => toml::from_str(&contents).unwrap_or_else(|e| {
+      eprintln!("Warning: failed to parse {}: {}", path.display(), e);
+      Config::default()
+    }),
+    Err(_) => Config::default(),
+  }
+}
+
+pub struct AppConfig {
+  pub menubar_provider: Arc<dyn UsageProvider>,
+  pub all_providers: Vec<Arc<dyn UsageProvider>>,
+  pub monochrome_icon: bool,
+  pub display_mode: String,
+  pub show_period_percentage: bool,
+  pub reset_time_format: String,
+  pub refetch_interval: f64,
+}
+
+pub fn create_providers() -> Result<AppConfig> {
+  let config = load_config();
+
+  if config.providers.is_empty() {
+    bail!("No providers configured");
+  }
+
+  if config.menubar_provider >= config.providers.len() {
+    bail!(
+      "menubar_provider index {} out of range (have {} providers)",
+      config.menubar_provider,
+      config.providers.len()
+    );
+  }
+
+  let providers: Vec<Arc<dyn UsageProvider>> =
+    config.providers.iter().map(|def| create_provider(def)).collect::<Result<_>>()?;
+
+  let menubar = Arc::clone(&providers[config.menubar_provider]);
+
+  return Ok(AppConfig {
+    menubar_provider: menubar,
+    all_providers: providers,
+    monochrome_icon: config.monochrome_icon,
+    display_mode: config.display_mode,
+    show_period_percentage: config.show_period_percentage,
+    reset_time_format: config.reset_time_format,
+    refetch_interval: config.refetch_interval,
+  });
+}
