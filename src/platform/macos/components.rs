@@ -5,10 +5,9 @@ use objc2_app_kit::{
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{NSArray, NSString};
 
-use crate::{
-  api::{SubscriptionTier, UsageBucket},
-  util::{NSViewExt, format_reset_time},
-};
+use crate::api::{SubscriptionTier, UsageBucket};
+use crate::util::format_reset_time;
+use super::util::NSViewExt;
 
 const MENU_WIDTH: CGFloat = 256.0;
 const H_PADDING: CGFloat = 14.0;

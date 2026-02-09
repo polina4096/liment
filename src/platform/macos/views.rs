@@ -3,11 +3,9 @@ use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tap::Tap as _;
 
-use crate::{
-  api::{ProfileResponse, UsageResponse},
-  components,
-  delegate::AppDelegate,
-};
+use crate::api::{ProfileResponse, UsageResponse};
+use super::components;
+use super::delegate::AppDelegate;
 
 pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu> {
   return NSMenu::new(mtm).tap(|menu| {

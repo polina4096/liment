@@ -22,9 +22,9 @@ use tap::Tap;
 use crate::{
   CliArgs,
   api::{ApiClient, ProfileResponse, UsageResponse},
-  util::schedule_timer,
-  views,
 };
+use super::util::schedule_timer;
+use super::views;
 
 pub struct AppDelegateIvars {
   /// A client to fetch information from the API.
@@ -246,7 +246,7 @@ impl AppDelegate {
     let image_size = NSSize::new(width, height);
 
     // Load the Claude logo from the embedded SVG.
-    let svg_bytes = include_bytes!("../resources/claude.svg");
+    let svg_bytes = include_bytes!("../../../resources/claude.svg");
     let logo_data = unsafe { NSData::dataWithBytes_length(svg_bytes.as_ptr() as *const c_void, svg_bytes.len()) };
     let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load Claude logo");
     logo_img.setSize(NSSize::new(logo_size, logo_size));
