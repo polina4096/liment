@@ -27,6 +27,10 @@ struct Config {
   #[serde(default)]
   monochrome_icon: bool,
 
+  /// Display mode: "usage" or "remaining" (default: "usage").
+  #[serde(default = "default_display_mode")]
+  display_mode: String,
+
   /// List of provider definitions.
   #[serde(default = "default_providers")]
   providers: Vec<ProviderDef>,
@@ -39,11 +43,16 @@ fn default_providers() -> Vec<ProviderDef> {
   }]
 }
 
+fn default_display_mode() -> String {
+  "usage".to_string()
+}
+
 impl Default for Config {
   fn default() -> Self {
     Self {
       menubar_provider: 0,
       monochrome_icon: false,
+      display_mode: default_display_mode(),
       providers: default_providers(),
     }
   }
@@ -94,6 +103,7 @@ pub struct AppConfig {
   pub menubar_provider: Arc<dyn UsageProvider>,
   pub all_providers: Vec<Arc<dyn UsageProvider>>,
   pub monochrome_icon: bool,
+  pub display_mode: String,
 }
 
 pub fn create_providers() -> Result<AppConfig> {
@@ -120,5 +130,6 @@ pub fn create_providers() -> Result<AppConfig> {
     menubar_provider: menubar,
     all_providers: providers,
     monochrome_icon: config.monochrome_icon,
+    display_mode: config.display_mode,
   });
 }

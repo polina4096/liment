@@ -38,6 +38,9 @@ pub struct AppDelegateIvars {
 
   /// Whether to render the tray icon in monochrome.
   monochrome_icon: bool,
+
+  /// Display mode: "usage" or "remaining".
+  pub display_mode: String,
 }
 
 define_class!(
@@ -131,6 +134,7 @@ impl AppDelegate {
     provider: Arc<dyn UsageProvider>,
     args: CliArgs,
     monochrome_icon: bool,
+    display_mode: &str,
   ) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
@@ -150,6 +154,7 @@ impl AppDelegate {
       status_item,
       args,
       monochrome_icon,
+      display_mode: display_mode.to_string(),
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
@@ -200,8 +205,9 @@ impl AppDelegate {
       let mut tray_windows = data.windows.iter().filter(|w| w.short_title.is_some());
       let w0 = tray_windows.next();
       let w1 = tray_windows.next();
-      let p0 = w0.map(|w| w.utilization).unwrap_or(0.0);
-      let p1 = w1.map(|w| w.utilization).unwrap_or(0.0);
+      let is_remaining = self.ivars().display_mode == "remaining";
+      let p0 = w0.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
+      let p1 = w1.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
 
       let v0 = p0 as u32;
       let v1 = p1 as u32;
