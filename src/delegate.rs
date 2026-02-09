@@ -41,6 +41,12 @@ pub struct AppDelegateIvars {
 
   /// Display mode: "usage" or "remaining".
   pub display_mode: String,
+
+  /// Whether to show period percentage next to "resets in".
+  pub show_period_percentage: bool,
+
+  /// Reset time format: "relative" or "absolute".
+  pub reset_time_format: String,
 }
 
 define_class!(
@@ -135,6 +141,8 @@ impl AppDelegate {
     args: CliArgs,
     monochrome_icon: bool,
     display_mode: &str,
+    show_period_percentage: bool,
+    reset_time_format: &str,
   ) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
@@ -155,6 +163,8 @@ impl AppDelegate {
       args,
       monochrome_icon,
       display_mode: display_mode.to_string(),
+      show_period_percentage,
+      reset_time_format: reset_time_format.to_string(),
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 

@@ -39,6 +39,9 @@ pub struct UsageWindow {
 
   /// Bucket reset timestamp.
   pub resets_at: Timestamp,
+
+  /// Total period duration in seconds (e.g. 18000 for 5h, 604800 for 7d).
+  pub period_seconds: Option<i64>,
 }
 
 pub trait UsageProvider: Send + Sync {

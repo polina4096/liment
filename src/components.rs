@@ -5,7 +5,8 @@ use objc2_app_kit::{
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{NSArray, NSString};
 
-use crate::utils::macos::{NSViewExt, format_reset_time};
+use crate::utils::macos::NSViewExt;
+use crate::utils::time::{format_absolute_time, format_reset_time};
 
 use jiff::Timestamp;
 
@@ -40,8 +41,23 @@ fn layout(container: &NSView) {
   container.setFrameSize(container.fittingSize());
 }
 
-pub fn bucket_row(mtm: MainThreadMarker, label: &str, utilization: f64, resets_at: &Timestamp) -> Retained<NSMenuItem> {
-  let reset_str = format_reset_time(resets_at);
+pub fn bucket_row(mtm: MainThreadMarker, label: &str, utilization: f64, resets_at: &Timestamp, period_seconds: Option<i64>, absolute_time: bool, is_remaining: bool) -> Retained<NSMenuItem> {
+  let mut reset_str = if absolute_time {
+    format!("reset: {}", format_absolute_time(resets_at))
+  } else {
+    format!("resets in {}", format_reset_time(resets_at))
+  };
+
+  if let Some(period) = period_seconds {
+    let now = Timestamp::now();
+    let remaining = resets_at.as_second() - now.as_second();
+    if remaining > 0 && period > 0 {
+      let elapsed_pct = ((period - remaining) as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
+      let display_pct = if is_remaining { 100.0 - elapsed_pct } else { elapsed_pct };
+      reset_str = format!("{} ({:.0}%)", reset_str, display_pct);
+    }
+  }
+
   let view = progress_row(mtm, label, utilization, &reset_str);
   let item = NSMenuItem::new(mtm);
   item.setView(Some(&view));
@@ -65,8 +81,7 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
   container.addSubview(&label_field);
 
   // Reset time label (right-aligned).
-  let reset_text = format!("resets in {}", reset_str);
-  let reset_field = NSTextField::labelWithString(&NSString::from_str(&reset_text), mtm);
+  let reset_field = NSTextField::labelWithString(&NSString::from_str(reset_str), mtm);
   reset_field.noAutoresize();
   reset_field.setEditable(false);
   reset_field.setBezeled(false);

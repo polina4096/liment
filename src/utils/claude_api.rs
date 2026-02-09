@@ -72,20 +72,21 @@ pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -
   });
 
   let mut windows = Vec::new();
-  let buckets: &[(&str, Option<&str>, &Option<UsageBucket>)] = &[
-    ("5h Limit", Some("5h"), &usage.five_hour),
-    ("7d Limit", Some("7d"), &usage.seven_day),
-    ("7d Sonnet", None, &usage.seven_day_sonnet),
-    ("7d Opus", None, &usage.seven_day_opus),
+  let buckets: &[(&str, Option<&str>, &Option<UsageBucket>, i64)] = &[
+    ("5h Limit", Some("5h"), &usage.five_hour, 5 * 3600),
+    ("7d Limit", Some("7d"), &usage.seven_day, 7 * 86400),
+    ("7d Sonnet", None, &usage.seven_day_sonnet, 7 * 86400),
+    ("7d Opus", None, &usage.seven_day_opus, 7 * 86400),
   ];
 
-  for (title, short_title, bucket) in buckets {
+  for (title, short_title, bucket, period_secs) in buckets {
     if let Some(b) = bucket {
       windows.push(UsageWindow {
         title: title.to_string(),
         short_title: short_title.map(|s| s.to_string()),
         utilization: b.utilization,
         resets_at: b.resets_at,
+        period_seconds: Some(*period_secs),
       });
     }
   }
