@@ -31,6 +31,14 @@ struct Config {
   #[serde(default = "default_display_mode")]
   display_mode: String,
 
+  /// Whether to show period percentage next to "resets in".
+  #[serde(default)]
+  show_period_percentage: bool,
+
+  /// Reset time format: "relative" (resets in 3h) or "absolute" (resets on 13 Feb, 14:00).
+  #[serde(default = "default_reset_time_format")]
+  reset_time_format: String,
+
   /// List of provider definitions.
   #[serde(default = "default_providers")]
   providers: Vec<ProviderDef>,
@@ -47,12 +55,18 @@ fn default_display_mode() -> String {
   "usage".to_string()
 }
 
+fn default_reset_time_format() -> String {
+  "relative".to_string()
+}
+
 impl Default for Config {
   fn default() -> Self {
     Self {
       menubar_provider: 0,
       monochrome_icon: false,
       display_mode: default_display_mode(),
+      show_period_percentage: false,
+      reset_time_format: default_reset_time_format(),
       providers: default_providers(),
     }
   }
@@ -104,6 +118,8 @@ pub struct AppConfig {
   pub all_providers: Vec<Arc<dyn UsageProvider>>,
   pub monochrome_icon: bool,
   pub display_mode: String,
+  pub show_period_percentage: bool,
+  pub reset_time_format: String,
 }
 
 pub fn create_providers() -> Result<AppConfig> {
@@ -131,5 +147,7 @@ pub fn create_providers() -> Result<AppConfig> {
     all_providers: providers,
     monochrome_icon: config.monochrome_icon,
     display_mode: config.display_mode,
+    show_period_percentage: config.show_period_percentage,
+    reset_time_format: config.reset_time_format,
   });
 }
