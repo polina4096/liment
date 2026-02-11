@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +20,63 @@ jobs:
       - name: Build & Package .app
         run: ./scripts/package.sh "${GITHUB_REF_NAME#v}"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: target/liment.app.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libgtk4-layer-shell-dev libdbus-1-dev
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          cd target/release
+          tar czf ../../liment-linux-x86_64.tar.gz liment
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: liment-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: Compress-Archive -Path target\release\liment.exe -DestinationPath liment-windows-x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: liment-windows-x86_64.zip
+
+  release:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/liment.app.zip
+          files: |
+            liment.app.zip
+            liment-linux-x86_64.tar.gz
+            liment-windows-x86_64.zip
           generate_release_notes: true

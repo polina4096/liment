@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::sync::Arc;
 
 #[cfg(target_os = "macos")]
@@ -13,7 +15,7 @@ use secrecy::ExposeSecret as _;
 use crate::api::ApiClient;
 
 mod api;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod icon;
 mod platform;
 mod util;
@@ -47,6 +49,13 @@ fn main() -> Result<()> {
       println!("Claude API Token: {}", token.expose_secret());
     }
 
+    #[cfg(target_os = "windows")]
+    {
+      unsafe { windows::Win32::System::Console::AllocConsole().ok() };
+      let token = util::get_claude_token()?;
+      println!("Claude API Token: {}", token.expose_secret());
+    }
+
     return Ok(());
   }
 
@@ -73,6 +82,14 @@ fn main() -> Result<()> {
     let api = Arc::new(ApiClient::new(token));
 
     platform::linux::run(api);
+  }
+
+  #[cfg(target_os = "windows")]
+  {
+    let token = util::get_claude_token()?;
+    let api = Arc::new(ApiClient::new(token));
+
+    platform::windows::run(api);
   }
 
   return Ok(());

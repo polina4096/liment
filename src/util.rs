@@ -28,8 +28,6 @@ pub fn format_reset_time(resets_at: &Timestamp) -> String {
   return format!("{}m", mins);
 }
 
-/// Re-reads the token from the platform credential store.
-/// Called by the API client on 401 to handle token rotation.
 #[cfg(target_os = "linux")]
 pub fn refresh_token() -> Result<SecretString> {
   return fetch_credentials_file();
@@ -40,7 +38,12 @@ pub fn refresh_token() -> Result<SecretString> {
   return crate::platform::macos::util::fetch_keychain_token();
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(target_os = "windows")]
+pub fn refresh_token() -> Result<SecretString> {
+  return fetch_credentials_file();
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub fn get_claude_token() -> Result<SecretString> {
   if let Ok(token) = std::env::var("LIMENT_TOKEN") {
     return Ok(SecretString::from(token));
@@ -50,9 +53,13 @@ pub fn get_claude_token() -> Result<SecretString> {
     .context("Failed to read token. Set LIMENT_TOKEN or sign in to Claude Code.");
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn fetch_credentials_file() -> Result<SecretString> {
+  #[cfg(target_os = "linux")]
   let home = std::env::var("HOME").context("HOME environment variable not set")?;
+  #[cfg(target_os = "windows")]
+  let home = std::env::var("USERPROFILE").context("USERPROFILE environment variable not set")?;
+
   let path = PathBuf::from(home).join(".claude").join(".credentials.json");
   let content =
     std::fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
