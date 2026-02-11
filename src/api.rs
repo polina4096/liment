@@ -4,7 +4,7 @@ use jiff::Timestamp;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
-use crate::util::fetch_keychain_token;
+use crate::util::refresh_token;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageResponse {
@@ -107,7 +107,7 @@ impl ApiClient {
     // If the request failed with a 401, the token may have been rotated.
     // Refetch from the keychain and retry once.
     if let Err(ureq::Error::StatusCode(401)) = &result {
-      if let Ok(new_token) = fetch_keychain_token() {
+      if let Ok(new_token) = refresh_token() {
         *self.token.lock().unwrap() = new_token;
         return self.get_inner(url).inspect_err(|e| eprintln!("Error: {}", e)).ok();
       }
