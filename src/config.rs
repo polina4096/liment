@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_inline_default::serde_inline_default;
 use toml_edit::DocumentMut;
 
-use crate::{CONFIG_PATH, providers::ProviderKind};
+use crate::{
+  CONFIG_PATH,
+  providers::{ProviderKind, ProviderSettings},
+};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -46,6 +49,10 @@ pub struct Config {
   /// Default data provider, the LLM subscription you use.
   #[serde_inline_default(ProviderKind::ClaudeCode)]
   pub provider: ProviderKind,
+
+  /// Provider-specific settings.
+  #[serde(default)]
+  pub settings: ProviderSettings,
 }
 
 impl Default for Config {
@@ -57,6 +64,7 @@ impl Default for Config {
       reset_time_format: DateTimeFormat::Relative,
       refetch_interval: 60,
       provider: ProviderKind::ClaudeCode,
+      settings: ProviderSettings::default(),
     };
   }
 }

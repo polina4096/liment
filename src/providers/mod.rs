@@ -1,17 +1,30 @@
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
-use crate::providers::claude_code::ClaudeCodeProvider;
+use crate::providers::{
+  claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
+  cliproxy_claude::{CliproxyClaudeProvider, CliproxyClaudeSettings},
+};
 
 pub mod claude_code;
+pub mod cliproxy_claude;
 pub mod debug;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
   ClaudeCode,
+  CliproxyClaude,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub struct ProviderSettings {
+  pub claude_code: Option<ClaudeCodeSettings>,
+  pub cliproxy_claude: Option<CliproxyClaudeSettings>,
 }
 
 pub struct TierInfo {
@@ -64,9 +77,22 @@ pub trait DataProvider: Send + Sync {
 }
 
 impl ProviderKind {
-  pub fn into_provider(&self) -> anyhow::Result<Arc<dyn DataProvider>> {
-    return Ok(match self {
-      ProviderKind::ClaudeCode => Arc::new(ClaudeCodeProvider::new()?),
-    });
+  pub fn into_provider(&self, settings: &ProviderSettings) -> anyhow::Result<Arc<dyn DataProvider>> {
+    match self {
+      ProviderKind::ClaudeCode => {
+        let settings = settings.claude_code.clone().unwrap_or_default();
+
+        return Ok(Arc::new(ClaudeCodeProvider::new(&settings)?));
+      }
+
+      ProviderKind::CliproxyClaude => {
+        let settings = settings
+          .cliproxy_claude
+          .as_ref()
+          .context("cliproxy_claude provider requires [settings.cliproxy_claude] in config")?;
+
+        return Ok(Arc::new(CliproxyClaudeProvider::new(settings)?));
+      }
+    };
   }
 }
