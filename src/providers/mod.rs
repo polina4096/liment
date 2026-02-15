@@ -1,16 +1,24 @@
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
 use jiff::Timestamp;
-
-use crate::config::ProviderDef;
+use rgb::Rgb;
+use serde::{Deserialize, Serialize};
 
 pub mod claude_code;
-pub mod cliproxy_claude;
+
+#[derive(Deserialize, Serialize)]
+pub enum ProviderKind {
+  ClaudeCode,
+}
+
+pub struct TierInfo {
+  pub name: String,
+  pub color: Rgb<u8>,
+}
 
 pub struct UsageData {
   /// Account tier label (e.g. "Pro", "Max 5x").
-  pub account_tier: Option<String>,
+  pub account_tier: Option<TierInfo>,
 
   /// API/extra usage credit info.
   pub api_usage: Option<ApiUsage>,
@@ -44,17 +52,14 @@ pub struct UsageWindow {
   pub period_seconds: Option<i64>,
 }
 
-pub trait UsageProvider: Send + Sync {
+pub trait DataProvider: Send + Sync {
   fn fetch_data(&self) -> Option<UsageData>;
-
-  /// Two placeholder labels for the menubar while loading (e.g. ["7d ..", "5h .."]).
-  fn placeholder_lines(&self) -> [&str; 2];
 }
 
-pub fn create_provider(def: &ProviderDef) -> Result<Arc<dyn UsageProvider>> {
-  match def.provider_type.as_str() {
-    "claude_code" => Ok(Arc::new(claude_code::ClaudeCodeProvider::new()?)),
-    "cliproxy_claude" => Ok(Arc::new(cliproxy_claude::CliproxyClaudeProvider::new(def)?)),
-    other => bail!("Unknown provider type: {}", other),
+impl ProviderKind {
+  pub fn into_provider(&self) -> anyhow::Result<Arc<dyn DataProvider>> {
+    return Ok(match self {
+      ProviderKind::ClaudeCode => Arc::new(claude_code::ClaudeCodeProvider::new()?),
+    });
   }
 }

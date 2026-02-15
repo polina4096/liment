@@ -1,7 +1,8 @@
 use jiff::Timestamp;
+use rgb::Rgb;
 use serde::Deserialize;
 
-use crate::providers::{ApiUsage, UsageData, UsageWindow};
+use crate::providers::{ApiUsage, TierInfo, UsageData, UsageWindow};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageResponse {
@@ -59,7 +60,17 @@ impl std::fmt::Display for SubscriptionTier {
 }
 
 pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -> UsageData {
-  let account_tier = profile.map(|p| p.organization.rate_limit_tier.to_string());
+  let account_tier = profile.map(|p| {
+    TierInfo {
+      name: p.organization.rate_limit_tier.to_string(),
+      color: match p.organization.rate_limit_tier {
+        SubscriptionTier::Free => Rgb::new(153, 153, 153),
+        SubscriptionTier::Pro => Rgb::new(77, 140, 230),
+        SubscriptionTier::Max5x => Rgb::new(140, 89, 217),
+        SubscriptionTier::Max20x => Rgb::new(217, 115, 51),
+      },
+    }
+  });
 
   let api_usage = usage.extra_usage.as_ref().and_then(|extra| {
     if !extra.is_enabled {

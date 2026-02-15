@@ -1,3 +1,4 @@
+use jiff::Timestamp;
 use objc2::{MainThreadMarker, Message, rc::Retained};
 use objc2_app_kit::{
   NSColor, NSFont, NSLayoutConstraint, NSMenuItem, NSProgressIndicator, NSProgressIndicatorStyle, NSTextField, NSView,
@@ -5,10 +6,14 @@ use objc2_app_kit::{
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{NSArray, NSString};
 
-use crate::utils::macos::NSViewExt;
-use crate::utils::time::{format_absolute_time, format_reset_time};
-
-use jiff::Timestamp;
+use crate::{
+  config::{DateTimeFormat, DisplayMode},
+  providers::TierInfo,
+  utils::{
+    macos::NSViewExt,
+    time::{format_absolute_time, format_reset_time},
+  },
+};
 
 const MENU_WIDTH: CGFloat = 256.0;
 const H_PADDING: CGFloat = 14.0;
@@ -41,11 +46,18 @@ fn layout(container: &NSView) {
   container.setFrameSize(container.fittingSize());
 }
 
-pub fn bucket_row(mtm: MainThreadMarker, label: &str, utilization: f64, resets_at: &Timestamp, period_seconds: Option<i64>, absolute_time: bool, is_remaining: bool) -> Retained<NSMenuItem> {
-  let mut reset_str = if absolute_time {
-    format!("reset: {}", format_absolute_time(resets_at))
-  } else {
-    format!("resets in {}", format_reset_time(resets_at))
+pub fn bucket_row(
+  mtm: MainThreadMarker,
+  label: &str,
+  utilization: f64,
+  resets_at: &Timestamp,
+  period_seconds: Option<i64>,
+  reset_time_format: DateTimeFormat,
+  display_format: DisplayMode,
+) -> Retained<NSMenuItem> {
+  let mut reset_str = match reset_time_format {
+    DateTimeFormat::Absolute => format!("reset: {}", format_absolute_time(resets_at)),
+    DateTimeFormat::Relative => format!("resets in {}", format_reset_time(resets_at)),
   };
 
   if let Some(period) = period_seconds {
@@ -53,11 +65,16 @@ pub fn bucket_row(mtm: MainThreadMarker, label: &str, utilization: f64, resets_a
     let remaining = resets_at.as_second() - now.as_second();
     if remaining > 0 && period > 0 {
       let elapsed_pct = ((period - remaining) as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
-      let display_pct = if is_remaining { 100.0 - elapsed_pct } else { elapsed_pct };
+      let display_pct = match display_format {
+        DisplayMode::Remaining => 100.0 - elapsed_pct,
+        DisplayMode::Usage => elapsed_pct,
+      };
+
       reset_str = format!("{} ({:.0}%)", reset_str, display_pct);
     }
   }
 
+  let utilization = if display_format == DisplayMode::Remaining { 100.0 - utilization } else { utilization };
   let view = progress_row(mtm, label, utilization, &reset_str);
   let item = NSMenuItem::new(mtm);
   item.setView(Some(&view));
@@ -69,7 +86,7 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Label: "5h Limit  8%".
-  let label_text = format!("{}  {}%", label, utilization as u32);
+  let label_text = format!("{}  {}%", label, utilization as i64);
   let label_field = NSTextField::labelWithString(&NSString::from_str(&label_text), mtm);
   label_field.noAutoresize();
   label_field.setEditable(false);
@@ -130,17 +147,7 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
   return container;
 }
 
-fn tier_badge_color(tier: &str) -> Retained<NSColor> {
-  return match tier {
-    "Free" => NSColor::colorWithSRGBRed_green_blue_alpha(0.60, 0.60, 0.60, 1.0),
-    "Pro" => NSColor::colorWithSRGBRed_green_blue_alpha(0.30, 0.55, 0.90, 1.0),
-    "Max 5x" => NSColor::colorWithSRGBRed_green_blue_alpha(0.55, 0.35, 0.85, 1.0),
-    "Max 20x" => NSColor::colorWithSRGBRed_green_blue_alpha(0.85, 0.45, 0.20, 1.0),
-    _ => NSColor::colorWithSRGBRed_green_blue_alpha(0.50, 0.50, 0.50, 1.0),
-  };
-}
-
-pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<&str>) -> Retained<NSView> {
+pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<TierInfo>) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Title label.
@@ -171,7 +178,7 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<&str>) -> Ret
 
     container.addSubview(&badge_view);
 
-    let badge_label = NSTextField::labelWithString(&NSString::from_str(tier), mtm);
+    let badge_label = NSTextField::labelWithString(&NSString::from_str(&tier.name), mtm);
     badge_label.noAutoresize();
     badge_label.setEditable(false);
     badge_label.setBezeled(false);
@@ -195,8 +202,13 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: Option<&str>) -> Ret
 
     // Round corners based on resolved height.
     badge_view.layoutSubtreeIfNeeded();
+
     if let Some(layer) = badge_view.layer() {
-      let color = tier_badge_color(tier);
+      let r = tier.color.r as f64 / 255.0;
+      let g = tier.color.g as f64 / 255.0;
+      let b = tier.color.b as f64 / 255.0;
+      let color = NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0);
+
       layer.setBackgroundColor(Some(&color.CGColor()));
       layer.setCornerRadius(badge_view.fittingSize().height / 2.0);
     }

@@ -1,5 +1,4 @@
-use std::ffi::c_void;
-use std::sync::Arc;
+use std::{ffi::c_void, sync::Arc};
 
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, MainThreadBound};
@@ -11,46 +10,41 @@ use objc2::{
 use objc2_app_kit::{
   NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSFont, NSFontAttributeName,
   NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+  NSWorkspace,
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
   NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
-  NSString, NSTimer,
+  NSString, NSTimer, NSURL,
 };
 use tap::Tap;
 
 use crate::{
-  CliArgs,
-  config::{self, AppConfig},
-  providers::{UsageData, UsageProvider},
+  CONFIG_PATH, CliArgs,
+  config::{Config, DisplayMode},
+  providers::{DataProvider, UsageData},
   utils::macos::schedule_timer,
   views,
 };
 
 pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
-  provider: Arc<dyn UsageProvider>,
+  provider: Arc<dyn DataProvider>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
 
-  /// Configuration options from the command line arguments.
+  /// Run-time options from the command line arguments.
   args: CliArgs,
 
-  /// Whether to render the tray icon in monochrome.
-  monochrome_icon: bool,
+  /// Configuration options from the command line arguments.
+  config: Config,
+}
 
-  /// Display mode: "usage" or "remaining".
-  pub display_mode: String,
-
-  /// Whether to show period percentage next to "resets in".
-  pub show_period_percentage: bool,
-
-  /// Reset time format: "relative" or "absolute".
-  pub reset_time_format: String,
-
-  /// Refetch interval in seconds.
-  pub refetch_interval: f64,
+impl AppDelegateIvars {
+  pub fn config(&self) -> &Config {
+    return &self.config;
+  }
 }
 
 define_class!(
@@ -86,9 +80,9 @@ define_class!(
 
     #[unsafe(method(onOpenConfig:))]
     fn on_open_config(&self, _sender: &AnyObject) {
-      let path = config::get_config_path();
-      let url = objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
-      let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+      let url = NSURL::fileURLWithPath(&NSString::from_str(&CONFIG_PATH.to_string_lossy()));
+      let workspace = NSWorkspace::sharedWorkspace();
+
       workspace.activateFileViewerSelectingURLs(&objc2_foundation::NSArray::from_retained_slice(&[url]));
     }
 
@@ -104,13 +98,15 @@ define_class!(
 
         let p1 = ((secs + 3.7) % 10.0) / 10.0;
         let p2 = (secs % 10.0) / 10.0;
-        let v1 = (p1 * 100.0) as u32;
-        let v2 = (p2 * 100.0) as u32;
+        let v1 = (p1 * 100.0) as i64;
+        let v2 = (p2 * 100.0) as i64;
+
         let w = (v1.max(1).ilog10() as usize + 1).max(v2.max(1).ilog10() as usize + 1);
+
         let img = Self::build_tray_image(
           &format!("7d {:>w$}%", v1), p1,
           &format!("5h {:>w$}%", v2), p2,
-          self.ivars().monochrome_icon,
+          self.ivars().config.monochrome_icon,
         );
 
         button.setImage(Some(&img));
@@ -127,43 +123,32 @@ define_class!(
       // First refresh.
       self.refresh();
 
-      // Refresh UI periodically.
-      schedule_timer!(self.ivars().refetch_interval, self, onTimer);
-
-      // Debug: cycle colors every 0.5s (20 steps over ~10s).
-      if self.ivars().args.cycle_colors {
-        schedule_timer!(0.5, self, onDebugTimer);
+      if !self.ivars().args.cycle_values {
+        // Refresh UI periodically.
+        schedule_timer!(self.ivars().config.refetch_interval, self, onTimer);
+      } else {
+        // Debug: cycle colors every 0.5s (20 steps over ~10s).
+        schedule_timer!(0.1, self, onDebugTimer);
       }
     }
   }
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, args: CliArgs, config: &AppConfig) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, provider: Arc<dyn DataProvider>, args: CliArgs, config: Config) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let ph = config.menubar_provider.placeholder_lines();
-      let img =
-        Self::build_tray_image(&format!("{} ..", ph[0]), 0.0, &format!("{} ..", ph[1]), 0.0, config.monochrome_icon);
+      let img = Self::build_tray_image("?? ..", 0.0, "?? ..", 0.0, config.monochrome_icon);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
     }
 
     let this = mtm.alloc::<AppDelegate>();
-    let this = this.set_ivars(AppDelegateIvars {
-      provider: Arc::clone(&config.menubar_provider),
-      status_item,
-      args,
-      monochrome_icon: config.monochrome_icon,
-      display_mode: config.display_mode.clone(),
-      show_period_percentage: config.show_period_percentage,
-      reset_time_format: config.reset_time_format.clone(),
-      refetch_interval: config.refetch_interval,
-    });
+    let this = this.set_ivars(AppDelegateIvars { provider, status_item, args, config });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
     // Set initial menu so the tray is interactive while loading.
@@ -184,6 +169,7 @@ impl AppDelegate {
 
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread.");
+
         this.get(mtm).rebuild_ui(data);
       });
     });
@@ -193,16 +179,11 @@ impl AppDelegate {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
-    let Some(data) = data else {
+    let Some(data) = data
+    else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let ph = self.ivars().provider.placeholder_lines();
-        let img = Self::build_tray_image(
-          &format!("{} --", ph[0]),
-          0.0,
-          &format!("{} --", ph[1]),
-          0.0,
-          self.ivars().monochrome_icon,
-        );
+        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, self.ivars().config.monochrome_icon);
+
         tray_button.setImage(Some(&img));
       }
       return;
@@ -213,12 +194,12 @@ impl AppDelegate {
       let mut tray_windows = data.windows.iter().filter(|w| w.short_title.is_some());
       let w0 = tray_windows.next();
       let w1 = tray_windows.next();
-      let is_remaining = self.ivars().display_mode == "remaining";
+      let is_remaining = self.ivars().config.display_mode == DisplayMode::Remaining;
       let p0 = w0.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
       let p1 = w1.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
 
-      let v0 = p0 as u32;
-      let v1 = p1 as u32;
+      let v0 = p0 as i64;
+      let v1 = p1 as i64;
       let w = (v0.max(1).ilog10() as usize + 1).max(v1.max(1).ilog10() as usize + 1);
 
       let label0 = w0.and_then(|w| w.short_title.as_deref()).unwrap_or("--");
@@ -226,7 +207,8 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, self.ivars().monochrome_icon);
+      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, self.ivars().config().monochrome_icon);
+
       tray_button.setImage(Some(&img));
     }
 
@@ -289,7 +271,9 @@ impl AppDelegate {
     let svg_bytes = include_bytes!("../resources/claude.svg");
     let logo_data = unsafe { NSData::dataWithBytes_length(svg_bytes.as_ptr() as *const c_void, svg_bytes.len()) };
     let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load Claude logo");
+
     logo_img.setSize(NSSize::new(logo_size, logo_size));
+
     if monochrome {
       logo_img.setTemplate(true);
     }
@@ -308,9 +292,7 @@ impl AppDelegate {
     });
 
     let img = NSImage::imageWithSize_flipped_drawingHandler(image_size, false, &block);
-    if monochrome {
-      img.setTemplate(true);
-    }
+
     return img;
   }
 
