@@ -15,6 +15,7 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&refresh_item(mtm, app));
     menu.addItem(&open_config_item(mtm, app));
+    menu.addItem(&open_logs_item(mtm, app));
     menu.addItem(&quit_item(mtm, app));
   });
 }
@@ -66,6 +67,7 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
   menu.addItem(&NSMenuItem::separatorItem(mtm));
   menu.addItem(&refresh_item(mtm, app));
   menu.addItem(&open_config_item(mtm, app));
+  menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
 }
 
@@ -89,6 +91,19 @@ fn open_config_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
       &NSString::from_str("Open Config…"),
       Some(sel!(onOpenConfig:)),
       &NSString::from_str(","),
+    )
+  };
+  unsafe { item.setTarget(Some(app)) };
+  return item;
+}
+
+fn open_logs_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {
+  let item = unsafe {
+    NSMenuItem::initWithTitle_action_keyEquivalent(
+      mtm.alloc::<NSMenuItem>(),
+      &NSString::from_str("Open Logs…"),
+      Some(sel!(onOpenLogs:)),
+      &NSString::from_str("l"),
     )
   };
   unsafe { item.setTarget(Some(app)) };

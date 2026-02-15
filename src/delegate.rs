@@ -10,12 +10,11 @@ use objc2::{
 use objc2_app_kit::{
   NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSFont, NSFontAttributeName,
   NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
-  NSWorkspace,
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
   NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
-  NSString, NSTimer, NSURL,
+  NSString, NSTimer,
 };
 use tap::Tap;
 
@@ -23,7 +22,7 @@ use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
   providers::{DataProvider, UsageData},
-  utils::macos::schedule_timer,
+  utils::{log::LOG_DIR, macos::schedule_timer},
   views,
 };
 
@@ -80,10 +79,16 @@ define_class!(
 
     #[unsafe(method(onOpenConfig:))]
     fn on_open_config(&self, _sender: &AnyObject) {
-      let url = NSURL::fileURLWithPath(&NSString::from_str(&CONFIG_PATH.to_string_lossy()));
-      let workspace = NSWorkspace::sharedWorkspace();
+      if let Err(e) = open::that(&*CONFIG_PATH) {
+        log::error!("Failed to open config file: {}", e);
+      }
+    }
 
-      workspace.activateFileViewerSelectingURLs(&objc2_foundation::NSArray::from_retained_slice(&[url]));
+    #[unsafe(method(onOpenLogs:))]
+    fn on_open_logs(&self, _sender: &AnyObject) {
+      if let Err(e) = open::that(&*LOG_DIR) {
+        log::error!("Failed to open logs directory: {}", e);
+      }
     }
 
   }
