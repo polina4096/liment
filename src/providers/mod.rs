@@ -4,6 +4,8 @@ use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
+use crate::providers::claude_code::ClaudeCodeProvider;
+
 pub mod claude_code;
 pub mod debug;
 
@@ -64,7 +66,7 @@ pub trait DataProvider: Send + Sync {
 impl ProviderKind {
   pub fn into_provider(&self) -> anyhow::Result<Arc<dyn DataProvider>> {
     return Ok(match self {
-      ProviderKind::ClaudeCode => Arc::new(claude_code::ClaudeCodeProvider::new()?),
+      ProviderKind::ClaudeCode => Arc::new(ClaudeCodeProvider::new()?),
     });
   }
 }
