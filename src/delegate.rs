@@ -86,33 +86,6 @@ define_class!(
       workspace.activateFileViewerSelectingURLs(&objc2_foundation::NSArray::from_retained_slice(&[url]));
     }
 
-    #[unsafe(method(onDebugTimer:))]
-    fn on_debug_timer(&self, _timer: &NSTimer) {
-      let mtm = self.mtm();
-
-      if let Some(button) = self.ivars().status_item.button(mtm) {
-        let secs = std::time::SystemTime::now()
-          .duration_since(std::time::UNIX_EPOCH)
-          .unwrap_or_default()
-          .as_secs_f64();
-
-        let p1 = ((secs + 3.7) % 10.0) / 10.0;
-        let p2 = (secs % 10.0) / 10.0;
-        let v1 = (p1 * 100.0) as i64;
-        let v2 = (p2 * 100.0) as i64;
-
-        let w = (v1.max(1).ilog10() as usize + 1).max(v2.max(1).ilog10() as usize + 1);
-
-        let img = Self::build_tray_image(
-          &format!("7d {:>w$}%", v1), p1,
-          &format!("5h {:>w$}%", v2), p2,
-          self.ivars().config.monochrome_icon,
-        );
-
-        button.setImage(Some(&img));
-      }
-    }
-
   }
 
   unsafe impl NSObjectProtocol for AppDelegate {}
@@ -123,13 +96,13 @@ define_class!(
       // First refresh.
       self.refresh();
 
-      if !self.ivars().args.cycle_values {
-        // Refresh UI periodically.
-        schedule_timer!(self.ivars().config.refetch_interval, self, onTimer);
-      } else {
-        // Debug: cycle colors every 0.5s (20 steps over ~10s).
-        schedule_timer!(0.1, self, onDebugTimer);
-      }
+      let refetch_interval = match self.ivars().args.debug_values {
+        true => 0.1,
+        false => self.ivars().config.refetch_interval as f64,
+      };
+
+      // Refresh UI periodically.
+      schedule_timer!(refetch_interval, self, onTimer);
     }
   }
 );

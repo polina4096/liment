@@ -36,7 +36,7 @@ pub struct ProfileOrganization {
   pub rate_limit_tier: SubscriptionTier,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, strum::EnumIter)]
 pub enum SubscriptionTier {
   #[serde(rename = "default_claude_free")]
   Free,
@@ -46,6 +46,20 @@ pub enum SubscriptionTier {
   Max5x,
   #[serde(rename = "default_claude_max_20x")]
   Max20x,
+}
+
+impl SubscriptionTier {
+  pub fn tier_info(&self) -> TierInfo {
+    TierInfo {
+      name: self.to_string(),
+      color: match self {
+        SubscriptionTier::Free => Rgb::new(140, 140, 155),
+        SubscriptionTier::Pro => Rgb::new(90, 145, 210),
+        SubscriptionTier::Max5x => Rgb::new(145, 110, 200),
+        SubscriptionTier::Max20x => Rgb::new(205, 130, 95),
+      },
+    }
+  }
 }
 
 impl std::fmt::Display for SubscriptionTier {
@@ -60,17 +74,7 @@ impl std::fmt::Display for SubscriptionTier {
 }
 
 pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -> UsageData {
-  let account_tier = profile.map(|p| {
-    TierInfo {
-      name: p.organization.rate_limit_tier.to_string(),
-      color: match p.organization.rate_limit_tier {
-        SubscriptionTier::Free => Rgb::new(153, 153, 153),
-        SubscriptionTier::Pro => Rgb::new(77, 140, 230),
-        SubscriptionTier::Max5x => Rgb::new(140, 89, 217),
-        SubscriptionTier::Max20x => Rgb::new(217, 115, 51),
-      },
-    }
-  });
+  let account_tier = profile.map(|p| p.organization.rate_limit_tier.tier_info());
 
   let api_usage = usage.extra_usage.as_ref().and_then(|extra| {
     if !extra.is_enabled {

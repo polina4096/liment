@@ -5,6 +5,7 @@ use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
 pub mod claude_code;
+pub mod debug;
 
 #[derive(Deserialize, Serialize)]
 pub enum ProviderKind {
@@ -53,7 +54,11 @@ pub struct UsageWindow {
 }
 
 pub trait DataProvider: Send + Sync {
+  /// Fetches usage data for the provider.
   fn fetch_data(&self) -> Option<UsageData>;
+
+  /// Returns all possible tiers for this provider.
+  fn all_tiers(&self) -> Vec<TierInfo>;
 }
 
 impl ProviderKind {

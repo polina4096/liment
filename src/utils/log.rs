@@ -5,7 +5,7 @@ use jiff::{Zoned, fmt::strtime};
 use log::LevelFilter;
 use simplelog::{ColorChoice, CombinedLogger, SharedLogger, TermLogger, TerminalMode, WriteLogger};
 
-use crate::constants::{LIMENT_LOG_DIR, LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS};
+use crate::constants::{LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS, LIMENT_OVERRIDE_LOG_DIR};
 
 fn term_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) {
   loggers.push(TermLogger::new(LevelFilter::Debug, config, TerminalMode::Mixed, ColorChoice::Auto));
@@ -13,7 +13,7 @@ fn term_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger
 
 fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) -> anyhow::Result<()> {
   if std::env::var(LIMENT_NO_DISK_LOGS).is_err() {
-    let log_dir = std::env::var(LIMENT_LOG_DIR).map(PathBuf::from).unwrap_or_else(|_| {
+    let log_dir = std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(PathBuf::from).unwrap_or_else(|_| {
       let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"));
       let log_dir = data_dir.join("liment");
 
