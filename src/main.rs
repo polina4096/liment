@@ -43,8 +43,10 @@ static CONFIG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 
 fn main() -> Result<()> {
   utils::log::init_logger();
+
   Config::ensure_exists()?;
 
+  // Process CLI arguments.
   let args = CliArgs::parse();
 
   if args.open_config {
@@ -53,11 +55,13 @@ fn main() -> Result<()> {
     return Ok(());
   }
 
+  // Load configuration.
   let config = Figment::new()
     .merge(Toml::file(&*CONFIG_PATH))
     .merge(Env::prefixed("LIMENT_CONFIG_").split("_"))
     .extract::<Config>()?;
 
+  // Initialize application.
   let mtm = MainThreadMarker::new().context("Failed to create main thread marker")?;
 
   let app = NSApplication::sharedApplication(mtm);
