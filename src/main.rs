@@ -13,6 +13,7 @@ use crate::{config::Config, delegate::AppDelegate};
 
 mod components;
 mod config;
+mod constants;
 mod delegate;
 mod providers;
 mod utils;
@@ -38,9 +39,10 @@ static CONFIG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 fn main() -> Result<()> {
-  let args = CliArgs::parse();
-
+  utils::log::init_logger();
   Config::ensure_exists()?;
+
+  let args = CliArgs::parse();
 
   if args.open_config {
     edit::edit_file(&*CONFIG_PATH)?;
