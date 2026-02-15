@@ -76,7 +76,15 @@ impl Config {
 
     for (i, (key, comment)) in doc.clone().iter().zip(Self::FIELD_DOCS.iter()).enumerate() {
       let prefix = if i == 0 { format!("# {comment}\n") } else { format!("\n# {comment}\n") };
-      doc.key_mut(key.0).context("missing key in serialized config")?.leaf_decor_mut().set_prefix(prefix);
+      let item = doc.get_mut(key.0).context("missing key in serialized config")?;
+
+      if let Some(table) = item.as_table_mut() {
+        table.decor_mut().set_prefix(prefix);
+      }
+      else {
+        let mut key = doc.key_mut(key.0).context("missing key in serialized config")?;
+        key.leaf_decor_mut().set_prefix(prefix);
+      }
     }
 
     return Ok(doc.to_string());
