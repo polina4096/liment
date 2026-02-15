@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::LazyLock};
 
 use anyhow::Context as _;
 use jiff::{Zoned, fmt::strtime};
@@ -7,21 +7,23 @@ use simplelog::{ColorChoice, CombinedLogger, SharedLogger, TermLogger, TerminalM
 
 use crate::constants::{LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS, LIMENT_OVERRIDE_LOG_DIR};
 
+pub static LOG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+  return std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(PathBuf::from).unwrap_or_else(|_| {
+    let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"));
+    return data_dir.join("liment").join("logs");
+  });
+});
+
 fn term_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) {
   loggers.push(TermLogger::new(LevelFilter::Debug, config, TerminalMode::Mixed, ColorChoice::Auto));
 }
 
 fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) -> anyhow::Result<()> {
   if std::env::var(LIMENT_NO_DISK_LOGS).is_err() {
-    let log_dir = std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(PathBuf::from).unwrap_or_else(|_| {
-      let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"));
-      let log_dir = data_dir.join("liment");
+    let log_dir = &*LOG_DIR;
 
-      return log_dir;
-    });
-
-    if !fs_err::exists(&log_dir).unwrap_or(false) {
-      fs_err::create_dir_all(&log_dir).context("Failed to create log directory")?;
+    if !fs_err::exists(log_dir).unwrap_or(false) {
+      fs_err::create_dir_all(log_dir).context("Failed to create log directory")?;
     }
 
     let now = strtime::format("%Y_%m_%dT%H_%M_%S", &Zoned::now()).context("Failed to format time")?;

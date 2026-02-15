@@ -32,6 +32,10 @@ struct CliArgs {
   /// Open the configuration file in the default text editor.
   #[arg(long)]
   open_config: bool,
+
+  /// Open the logs directory in the default file manager.
+  #[arg(long)]
+  open_logs: bool,
 }
 
 static CONFIG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
@@ -51,6 +55,12 @@ fn main() -> Result<()> {
 
   if args.open_config {
     edit::edit_file(&*CONFIG_PATH)?;
+
+    return Ok(());
+  }
+
+  if args.open_logs {
+    open::that(&*utils::log::LOG_DIR)?;
 
     return Ok(());
   }
