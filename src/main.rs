@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::LazyLock};
+use std::{
+  path::PathBuf,
+  sync::{Arc, LazyLock},
+};
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
@@ -9,7 +12,7 @@ use figment2::{
 use objc2::{MainThreadMarker, runtime::ProtocolObject};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
-use crate::{config::Config, delegate::AppDelegate};
+use crate::{config::Config, delegate::AppDelegate, providers::debug::DebugProvider};
 
 mod components;
 mod config;
@@ -22,9 +25,9 @@ mod views;
 #[derive(Parser)]
 #[command()]
 struct CliArgs {
-  /// Debug: cycle tray values from 0% to 100%.
+  /// Cycle tray values from 0% to 100% and switch between tiers.
   #[arg(long)]
-  cycle_values: bool,
+  debug_values: bool,
 
   /// Open the configuration file in the default text editor.
   #[arg(long)]
@@ -61,6 +64,11 @@ fn main() -> Result<()> {
   app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
   let provider = config.provider.into_provider()?;
+  let provider = match args.debug_values {
+    true => Arc::new(DebugProvider::new(&*provider)),
+    false => provider,
+  };
+
   let delegate = AppDelegate::new(mtm, provider, args, config);
   let delegate = ProtocolObject::from_ref(&*delegate);
   app.setDelegate(Some(delegate));

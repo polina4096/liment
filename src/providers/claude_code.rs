@@ -4,9 +4,10 @@ use anyhow::{Context as _, Result};
 use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::Deserialize;
+use strum::IntoEnumIterator as _;
 
 use super::{DataProvider, UsageData};
-use crate::utils::claude_api::{ProfileResponse, UsageResponse};
+use crate::utils::claude_api::{self, ProfileResponse, SubscriptionTier, UsageResponse};
 
 pub struct ClaudeCodeProvider {
   token: Mutex<SecretString>,
@@ -104,6 +105,10 @@ impl DataProvider for ClaudeCodeProvider {
     let usage = self.fetch_usage()?;
     let profile = self.fetch_profile();
 
-    return Some(crate::utils::claude_api::into_usage_data(usage, profile));
+    return Some(claude_api::into_usage_data(usage, profile));
+  }
+
+  fn all_tiers(&self) -> Vec<super::TierInfo> {
+    return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
 }
