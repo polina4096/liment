@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::Deserialize;
 
-use super::{UsageData, UsageProvider};
+use super::{DataProvider, UsageData};
 use crate::utils::claude_api::{ProfileResponse, UsageResponse};
 
 pub struct ClaudeCodeProvider {
@@ -15,6 +15,7 @@ pub struct ClaudeCodeProvider {
 impl ClaudeCodeProvider {
   pub fn new() -> Result<Self> {
     let token = Self::fetch_token()?;
+
     return Ok(Self { token: Mutex::new(token) });
   }
 
@@ -22,7 +23,8 @@ impl ClaudeCodeProvider {
     if let Ok(token) = std::env::var("LIMENT_CLAUDE_CODE_TOKEN") {
       return Ok(SecretString::from(token));
     }
-    Self::fetch_keychain_token()
+
+    return Self::fetch_keychain_token();
   }
 
   fn fetch_keychain_token() -> Result<SecretString> {
@@ -34,9 +36,11 @@ impl ClaudeCodeProvider {
 
     let data = results
       .into_iter()
-      .find_map(|r| match r {
-        SearchResult::Data(d) => Some(d),
-        _ => None,
+      .find_map(|r| {
+        match r {
+          SearchResult::Data(d) => Some(d),
+          _ => None,
+        }
       })
       .context("Failed to find Claude Code credentials in keychain")?;
 
@@ -59,12 +63,14 @@ impl ClaudeCodeProvider {
 
   fn fetch_usage(&self) -> Option<UsageResponse> {
     let body = self.get("https://api.anthropic.com/api/oauth/usage")?;
-    serde_json::from_str(&body).ok()
+
+    return serde_json::from_str(&body).ok();
   }
 
   fn fetch_profile(&self) -> Option<ProfileResponse> {
     let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
-    serde_json::from_str(&body).ok()
+
+    return serde_json::from_str(&body).ok();
   }
 
   fn get(&self, url: &str) -> Option<String> {
@@ -92,14 +98,11 @@ impl ClaudeCodeProvider {
   }
 }
 
-impl UsageProvider for ClaudeCodeProvider {
+impl DataProvider for ClaudeCodeProvider {
   fn fetch_data(&self) -> Option<UsageData> {
     let usage = self.fetch_usage()?;
     let profile = self.fetch_profile();
-    return Some(crate::utils::claude_api::into_usage_data(usage, profile));
-  }
 
-  fn placeholder_lines(&self) -> [&str; 2] {
-    ["5h", "7d"]
+    return Some(crate::utils::claude_api::into_usage_data(usage, profile));
   }
 }
