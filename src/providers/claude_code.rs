@@ -143,13 +143,7 @@ impl ClaudeCodeProvider {
       return Ok(SecretString::from(token.clone()));
     }
 
-    if let Ok(token) = std::env::var("LIMENT_CLAUDE_CODE_TOKEN") {
-      log::info!("Using token from LIMENT_CLAUDE_CODE_TOKEN env var");
-
-      return Ok(SecretString::from(token));
-    }
-
-    log::debug!("Env var not set, fetching token from keychain");
+    log::debug!("Token not set in config, fetching from keychain");
 
     return Self::fetch_keychain_token();
   }
