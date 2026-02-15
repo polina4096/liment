@@ -123,6 +123,8 @@ pub struct ClaudeCodeProvider {
 
 impl ClaudeCodeProvider {
   pub fn new() -> Result<Self> {
+    log::info!("Initializing Claude Code provider");
+
     let token = Self::fetch_token()?;
 
     return Ok(Self { token: Mutex::new(token) });
@@ -130,8 +132,12 @@ impl ClaudeCodeProvider {
 
   fn fetch_token() -> Result<SecretString> {
     if let Ok(token) = std::env::var("LIMENT_CLAUDE_CODE_TOKEN") {
+      log::info!("Using token from LIMENT_CLAUDE_CODE_TOKEN env var");
+
       return Ok(SecretString::from(token));
     }
+
+    log::debug!("Env var not set, fetching token from keychain");
 
     return Self::fetch_keychain_token();
   }
@@ -171,32 +177,55 @@ impl ClaudeCodeProvider {
   }
 
   fn fetch_usage(&self) -> Option<UsageResponse> {
+    log::debug!("Fetching usage data");
+
     let body = self.get("https://api.anthropic.com/api/oauth/usage")?;
 
-    return serde_json::from_str(&body).ok();
+    return serde_json::from_str(&body)
+      .inspect(|u: &UsageResponse| log::debug!("Parsed usage: {:?}", u))
+      .inspect_err(|e| log::warn!("Failed to parse usage response: {}", e))
+      .ok();
   }
 
   fn fetch_profile(&self) -> Option<ProfileResponse> {
+    log::debug!("Fetching profile data");
+
     let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
 
-    return serde_json::from_str(&body).ok();
+    return serde_json::from_str(&body)
+      .inspect(|p: &ProfileResponse| log::debug!("Parsed profile: {:?}", p))
+      .inspect_err(|e| log::warn!("Failed to parse profile response: {}", e))
+      .ok();
   }
 
   fn get(&self, url: &str) -> Option<String> {
     let result = self.get_inner(url);
 
     if let Err(ureq::Error::StatusCode(401)) = &result {
+      log::warn!("Got 401 for {}, refreshing token from keychain", url);
+
       if let Ok(new_token) = Self::fetch_keychain_token() {
         *self.token.lock().unwrap() = new_token;
 
-        return self.get_inner(url).inspect_err(|e| log::error!("Error: {}", e)).ok();
+        log::info!("Token refreshed, retrying request");
+
+        return self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e)).ok();
       }
+      else {
+        log::error!("Failed to refresh token from keychain");
+      }
+    }
+
+    if let Err(ref e) = result {
+      log::error!("Request failed for {}: {}", url, e);
     }
 
     return result.ok();
   }
 
   fn get_inner(&self, url: &str) -> Result<String, ureq::Error> {
+    log::debug!("GET {}", url);
+
     let token = self.token.lock().unwrap();
     let mut response = ureq::get(url)
       .header("Authorization", &format!("Bearer {}", token.expose_secret()))
