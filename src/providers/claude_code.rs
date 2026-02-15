@@ -5,11 +5,17 @@ use jiff::Timestamp;
 use rgb::Rgb;
 use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator as _;
 
 use super::{DataProvider, UsageData};
 use crate::providers::{ApiUsage, TierInfo, UsageWindow};
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct ClaudeCodeSettings {
+  /// OAuth token override. If not set, reads from keychain.
+  pub token: Option<String>,
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageResponse {
@@ -122,15 +128,21 @@ pub struct ClaudeCodeProvider {
 }
 
 impl ClaudeCodeProvider {
-  pub fn new() -> Result<Self> {
+  pub fn new(settings: &ClaudeCodeSettings) -> Result<Self> {
     log::info!("Initializing Claude Code provider");
 
-    let token = Self::fetch_token()?;
+    let token = Self::fetch_token(settings)?;
 
     return Ok(Self { token: Mutex::new(token) });
   }
 
-  fn fetch_token() -> Result<SecretString> {
+  fn fetch_token(settings: &ClaudeCodeSettings) -> Result<SecretString> {
+    if let Some(token) = &settings.token {
+      log::info!("Using token from provider settings");
+
+      return Ok(SecretString::from(token.clone()));
+    }
+
     if let Ok(token) = std::env::var("LIMENT_CLAUDE_CODE_TOKEN") {
       log::info!("Using token from LIMENT_CLAUDE_CODE_TOKEN env var");
 

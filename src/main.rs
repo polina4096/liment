@@ -77,7 +77,9 @@ fn main() -> Result<()> {
   let app = NSApplication::sharedApplication(mtm);
   app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
-  let provider = config.provider.into_provider()?;
+  log::info!("Selected provider: {:?}", config.provider);
+
+  let provider = config.provider.into_provider(&config.settings)?;
   let provider = match args.debug_values {
     true => Arc::new(DebugProvider::new(&*provider)),
     false => provider,
