@@ -79,7 +79,8 @@ impl ClaudeCodeProvider {
     if let Err(ureq::Error::StatusCode(401)) = &result {
       if let Ok(new_token) = Self::fetch_keychain_token() {
         *self.token.lock().unwrap() = new_token;
-        return self.get_inner(url).inspect_err(|e| eprintln!("Error: {}", e)).ok();
+
+        return self.get_inner(url).inspect_err(|e| log::error!("Error: {}", e)).ok();
       }
     }
 

@@ -168,7 +168,7 @@ impl AppDelegate {
       let data = provider.fetch_data();
 
       DispatchQueue::main().exec_async(move || {
-        let mtm = MainThreadMarker::new().expect("Must be on main thread.");
+        let mtm = MainThreadMarker::new().expect("Must be on main thread");
 
         this.get(mtm).rebuild_ui(data);
       });
