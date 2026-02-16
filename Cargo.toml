@@ -48,7 +48,7 @@ dispatch2 = { version = "0.3.0" }
 objc2 = { version = "0.6.3" }
 objc2-core-foundation = { version = "0.3.2" }
 objc2-foundation = { version = "0.3.2", features = ["NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSString"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation"] }
 objc2-quartz-core = { version = "0.3.2", features = ["objc2-core-graphics", "objc2-core-foundation"] }
 security-framework = { version = "3.6.0" }
 dirs = { version = "6.0.0" }

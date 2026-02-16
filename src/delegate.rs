@@ -8,8 +8,9 @@ use objc2::{
   runtime::{AnyObject, Bool, NSObject},
 };
 use objc2_app_kit::{
-  NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSFont, NSFontAttributeName,
-  NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+  NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSCompositingOperation, NSFont,
+  NSFontAttributeName, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSRectFillUsingOperation,
+  NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
@@ -252,15 +253,18 @@ impl AppDelegate {
 
     logo_img.setSize(NSSize::new(logo_size, logo_size));
 
-    if monochrome {
-      logo_img.setTemplate(true);
-    }
-
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
       // Draw logo on the left, vertically centered.
       let logo_y = (height - logo_size) / 2.0;
       let logo_rect = NSRect::new(CGPoint::new(0.0, logo_y), NSSize::new(logo_size, logo_size));
       logo_img.drawInRect(logo_rect);
+
+      // Tint the logo to match the system text color by filling with SourceIn compositing,
+      // which replaces the color of non-transparent pixels while preserving alpha.
+      if monochrome {
+        NSColor::controlTextColor().setFill();
+        NSRectFillUsingOperation(logo_rect, NSCompositingOperation::SourceIn);
+      }
 
       // Draw text lines to the right of the logo.
       attr1.drawAtPoint(CGPoint::new(text_x, line_height));
