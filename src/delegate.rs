@@ -187,8 +187,10 @@ impl AppDelegate {
       let w0 = tray_windows.next();
       let w1 = tray_windows.next();
       let is_remaining = config.display_mode == DisplayMode::Remaining;
-      let p0 = w0.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
-      let p1 = w1.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
+      let u0 = w0.map(|w| w.utilization).unwrap_or(0.0);
+      let u1 = w1.map(|w| w.utilization).unwrap_or(0.0);
+      let p0 = if is_remaining { 100.0 - u0 } else { u0 };
+      let p1 = if is_remaining { 100.0 - u1 } else { u1 };
 
       let v0 = p0 as i64;
       let v1 = p1 as i64;
@@ -199,7 +201,7 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, config.monochrome_icon);
+      let img = Self::build_tray_image(&line1, u0 / 100.0, &line2, u1 / 100.0, config.monochrome_icon);
 
       tray_button.setImage(Some(&img));
     }
