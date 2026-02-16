@@ -1,4 +1,4 @@
-use std::{ffi::c_void, sync::Arc};
+use std::{cell::RefCell, ffi::c_void, sync::Arc};
 
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, MainThreadBound};
@@ -37,13 +37,13 @@ pub struct AppDelegateIvars {
   /// Run-time options from the command line arguments.
   args: CliArgs,
 
-  /// Configuration options from the command line arguments.
-  config: Config,
+  /// Hot-reloadable configuration.
+  config: RefCell<Config>,
 }
 
 impl AppDelegateIvars {
-  pub fn config(&self) -> &Config {
-    return &self.config;
+  pub fn config(&self) -> std::cell::Ref<'_, Config> {
+    return self.config.borrow();
   }
 }
 
@@ -104,7 +104,7 @@ define_class!(
 
       let refetch_interval = match self.ivars().args.debug_values {
         true => 0.1,
-        false => self.ivars().config.refetch_interval as f64,
+        false => self.ivars().config().refetch_interval as f64,
       };
 
       // Refresh UI periodically.
@@ -127,7 +127,12 @@ impl AppDelegate {
     }
 
     let this = mtm.alloc::<AppDelegate>();
-    let this = this.set_ivars(AppDelegateIvars { provider, status_item, args, config });
+    let this = this.set_ivars(AppDelegateIvars {
+      provider,
+      status_item,
+      args,
+      config: RefCell::new(config),
+    });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
     // Set initial menu so the tray is interactive while loading.
@@ -135,6 +140,12 @@ impl AppDelegate {
     this.ivars().status_item.setMenu(Some(&loading_menu));
 
     return this;
+  }
+
+  pub fn reload_config(&self, new_config: Config) {
+    *self.ivars().config.borrow_mut() = new_config;
+
+    self.refresh();
   }
 
   /// Refetches latest data from the API and updates the UI.
@@ -158,10 +169,12 @@ impl AppDelegate {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
+    let config = self.ivars().config();
+
     let Some(data) = data
     else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, self.ivars().config.monochrome_icon);
+        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, config.monochrome_icon);
 
         tray_button.setImage(Some(&img));
       }
@@ -173,7 +186,7 @@ impl AppDelegate {
       let mut tray_windows = data.windows.iter().filter(|w| w.short_title.is_some());
       let w0 = tray_windows.next();
       let w1 = tray_windows.next();
-      let is_remaining = self.ivars().config.display_mode == DisplayMode::Remaining;
+      let is_remaining = config.display_mode == DisplayMode::Remaining;
       let p0 = w0.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
       let p1 = w1.map(|w| if is_remaining { 100.0 - w.utilization } else { w.utilization }).unwrap_or(0.0);
 
@@ -186,7 +199,7 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, self.ivars().config().monochrome_icon);
+      let img = Self::build_tray_image(&line1, p0 / 100.0, &line2, p1 / 100.0, config.monochrome_icon);
 
       tray_button.setImage(Some(&img));
     }

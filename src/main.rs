@@ -10,7 +10,7 @@ use figment2::{
 use objc2::{MainThreadMarker, runtime::ProtocolObject};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
-use crate::{config::Config, delegate::AppDelegate, providers::debug::DebugProvider};
+use crate::{config::Config, delegate::AppDelegate, providers::debug::DebugProvider, watcher::watch_config};
 
 mod components;
 mod config;
@@ -19,6 +19,7 @@ mod delegate;
 mod providers;
 mod utils;
 mod views;
+mod watcher;
 
 #[derive(Parser)]
 #[command()]
@@ -87,10 +88,16 @@ fn main() -> Result<()> {
   };
 
   let delegate = AppDelegate::new(mtm, provider, args, config);
+
+  // Watch config file for changes.
+  let watcher = watch_config(&delegate, mtm).inspect_err(|e| log::warn!("{e:#}")).ok();
+
+  // Run application.
   let delegate = ProtocolObject::from_ref(&*delegate);
   app.setDelegate(Some(delegate));
-
   app.run();
+
+  drop(watcher);
 
   return Ok(());
 }

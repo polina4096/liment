@@ -30,15 +30,17 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
   menu.addItem(&header_item);
 
   // Usage windows.
+  let config = app.ivars().config();
+
   for window in &data.windows {
     menu.addItem(&components::bucket_row(
       mtm,
       &window.title,
       window.utilization,
       &window.resets_at,
-      if app.ivars().config().show_period_percentage { window.period_seconds } else { None },
-      app.ivars().config().reset_time_format,
-      app.ivars().config().display_mode,
+      if config.show_period_percentage { window.period_seconds } else { None },
+      config.reset_time_format,
+      config.display_mode,
     ));
   }
 
