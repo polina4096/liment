@@ -1,9 +1,7 @@
-use std::{
-  path::PathBuf,
-  sync::{Arc, LazyLock},
-};
+use std::sync::{Arc, LazyLock};
 
 use anyhow::{Context as _, Result};
+use camino::Utf8PathBuf;
 use clap::Parser;
 use figment2::{
   Figment,
@@ -38,8 +36,11 @@ struct CliArgs {
   open_logs: bool,
 }
 
-static CONFIG_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
-  let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("~/.config"));
+static CONFIG_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
+  let config_dir = dirs::config_dir()
+    .and_then(|p| Utf8PathBuf::try_from(p).ok())
+    .unwrap_or_else(|| Utf8PathBuf::from("~/.config"));
+
   let config_path = config_dir.join("liment").join("config.toml");
 
   return config_path;

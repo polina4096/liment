@@ -192,7 +192,7 @@ impl AppDelegate {
 
     let menu = status_item.menu(mtm).unwrap_or_else(|| {
       return objc2_app_kit::NSMenu::new(mtm).tap(|menu| {
-        status_item.setMenu(Some(&menu));
+        status_item.setMenu(Some(menu));
       });
     });
 

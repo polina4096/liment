@@ -14,7 +14,7 @@ pub mod claude_code;
 pub mod cliproxy_claude;
 pub mod debug;
 
-#[derive(Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
   ClaudeCode,
@@ -77,7 +77,7 @@ pub trait DataProvider: Send + Sync {
 }
 
 impl ProviderKind {
-  pub fn into_provider(&self, settings: &ProviderSettings) -> anyhow::Result<Arc<dyn DataProvider>> {
+  pub fn into_provider(self, settings: &ProviderSettings) -> anyhow::Result<Arc<dyn DataProvider>> {
     match self {
       ProviderKind::ClaudeCode => {
         let settings = settings.claude_code.clone().unwrap_or_default();
