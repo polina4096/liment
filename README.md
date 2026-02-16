@@ -57,4 +57,4 @@ refetch_interval = 60
 
 ## License
 
-Distributed under the The Unlicense, expect for the Claude logo.
+Distributed under the The Unlicense, except for the Claude logo.
