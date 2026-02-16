@@ -1,15 +1,19 @@
-use std::{path::PathBuf, sync::LazyLock};
+use std::sync::LazyLock;
 
 use anyhow::Context as _;
+use camino::Utf8PathBuf;
 use jiff::{Zoned, fmt::strtime};
 use log::LevelFilter;
 use simplelog::{ColorChoice, CombinedLogger, SharedLogger, TermLogger, TerminalMode, WriteLogger};
 
 use crate::constants::{LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS, LIMENT_OVERRIDE_LOG_DIR};
 
-pub static LOG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-  return std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(PathBuf::from).unwrap_or_else(|_| {
-    let data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"));
+pub static LOG_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
+  return std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(Utf8PathBuf::from).unwrap_or_else(|_| {
+    let data_dir = dirs::data_local_dir()
+      .and_then(|p| Utf8PathBuf::try_from(p).ok())
+      .unwrap_or_else(|| Utf8PathBuf::from("~/.local/share"));
+
     return data_dir.join("liment").join("logs");
   });
 });

@@ -40,7 +40,7 @@ simplelog = { version = "0.12.2" }
 tap = { version = "1.0.1" }
 anyhow = { version = "1.0.101" }
 strum = { version = "0.27.2", features = ["derive"] }
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.58", features = ["derive"] }
 figment2 = { version = "0.11.4", features = ["toml", "env"] }
 secrecy = { version = "0.10.3" }
 block2 = { version = "0.6.2" }
@@ -50,12 +50,13 @@ objc2-core-foundation = { version = "0.3.2" }
 objc2-foundation = { version = "0.3.2", features = ["NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSString"] }
 objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation"] }
 objc2-quartz-core = { version = "0.3.2", features = ["objc2-core-graphics", "objc2-core-foundation"] }
-security-framework = { version = "3.5.1" }
+security-framework = { version = "3.6.0" }
 dirs = { version = "6.0.0" }
 edit = { version = "0.1.5" }
 fs-err = { version = "3.3.0" }
+camino = { version = "1.2.2" }
 rgb = { version = "0.8.52" }
-jiff = { version = "0.2.19", features = ["serde"] }
+jiff = { version = "0.2.20", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149" }
 serde-inline-default = { version = "1.0.1" }
