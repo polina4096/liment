@@ -120,7 +120,7 @@ impl AppDelegate {
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let img = Self::build_tray_image("?? ..", 0.0, "?? ..", 0.0, config.monochrome_icon);
+      let img = Self::build_tray_image("?? ..", 0.0, "?? ..", 0.0, config.monochrome_icon, config.stats_colors);
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
@@ -174,7 +174,7 @@ impl AppDelegate {
     let Some(data) = data
     else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, config.monochrome_icon);
+        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, config.monochrome_icon, config.stats_colors);
 
         tray_button.setImage(Some(&img));
       }
@@ -201,7 +201,9 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
-      let img = Self::build_tray_image(&line1, u0 / 100.0, &line2, u1 / 100.0, config.monochrome_icon);
+      let u0 = u0 / 100.0;
+      let u1 = u1 / 100.0;
+      let img = Self::build_tray_image(&line1, u0, &line2, u1, config.monochrome_icon, config.stats_colors);
 
       tray_button.setImage(Some(&img));
     }
@@ -216,7 +218,7 @@ impl AppDelegate {
   }
 
   /// Builds a two-line attributed string with per-line colors.
-  fn build_attributed_line(text: &str, p: f64) -> Retained<NSAttributedString> {
+  fn build_attributed_line(text: &str, p: f64, stats_colors: bool) -> Retained<NSAttributedString> {
     let font = NSFont::monospacedSystemFontOfSize_weight(9.0, unsafe { NSFontWeightSemibold });
     let str = NSString::from_str(text);
 
@@ -226,9 +228,10 @@ impl AppDelegate {
     let result = NSMutableAttributedString::initWithAttributedString(NSMutableAttributedString::alloc(), &attr);
     let range = NSRange::new(0, str.len());
 
+    let color = if stats_colors { Self::utilization_color(p) } else { NSColor::controlTextColor() };
     unsafe {
       result.addAttribute_value_range(NSFontAttributeName, &font, range);
-      result.addAttribute_value_range(NSForegroundColorAttributeName, &Self::utilization_color(p), range);
+      result.addAttribute_value_range(NSForegroundColorAttributeName, &color, range);
     }
 
     // Upcast to immutable.
@@ -238,9 +241,16 @@ impl AppDelegate {
   /// Renders the Claude logo and two colored lines into an NSImage for the tray button.
   /// Using an image instead of an attributed title allows macOS to properly
   /// dim the content on inactive displays via menu bar compositing.
-  fn build_tray_image(line1: &str, p1: f64, line2: &str, p2: f64, monochrome: bool) -> Retained<NSImage> {
-    let attr1 = Self::build_attributed_line(line1, p1);
-    let attr2 = Self::build_attributed_line(line2, p2);
+  fn build_tray_image(
+    line1: &str,
+    p1: f64,
+    line2: &str,
+    p2: f64,
+    monochrome_icon: bool,
+    stats_colors: bool,
+  ) -> Retained<NSImage> {
+    let attr1 = Self::build_attributed_line(line1, p1, stats_colors);
+    let attr2 = Self::build_attributed_line(line2, p2, stats_colors);
 
     let size1 = attr1.size();
     let size2 = attr2.size();
@@ -276,7 +286,7 @@ impl AppDelegate {
 
       // Tint the logo to match the system text color by filling with SourceIn compositing,
       // which replaces the color of non-transparent pixels while preserving alpha.
-      if monochrome {
+      if monochrome_icon {
         NSColor::controlTextColor().setFill();
         NSRectFillUsingOperation(logo_rect, NSCompositingOperation::SourceIn);
       }

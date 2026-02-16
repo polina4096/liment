@@ -30,6 +30,10 @@ pub struct Config {
   #[serde_inline_default(true)]
   pub monochrome_icon: bool,
 
+  /// Whether to color the tray stats by utilization level.
+  #[serde_inline_default(true)]
+  pub stats_colors: bool,
+
   /// Display mode: "usage" or "remaining".
   #[serde_inline_default(DisplayMode::Usage)]
   pub display_mode: DisplayMode,
@@ -59,6 +63,7 @@ impl Default for Config {
   fn default() -> Self {
     return Self {
       monochrome_icon: true,
+      stats_colors: true,
       display_mode: DisplayMode::Usage,
       show_period_percentage: false,
       reset_time_format: DateTimeFormat::Relative,
