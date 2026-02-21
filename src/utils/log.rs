@@ -31,7 +31,7 @@ fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger
     }
 
     let now = strtime::format("%Y_%m_%dT%H_%M_%S", &Zoned::now()).context("Failed to format time")?;
-    let file = fs_err::File::create(log_dir.join(now)).context("Failed to create a log file")?;
+    let file = fs_err::File::create(log_dir.join(now).with_extension("log")).context("Failed to create a log file")?;
     loggers.push(WriteLogger::new(LevelFilter::Debug, config, file));
   }
 
