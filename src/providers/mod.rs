@@ -62,7 +62,7 @@ pub struct UsageWindow {
   pub utilization: f64,
 
   /// Bucket reset timestamp.
-  pub resets_at: Timestamp,
+  pub resets_at: Option<Timestamp>,
 
   /// Total period duration in seconds (e.g. 18000 for 5h, 604800 for 7d).
   pub period_seconds: Option<i64>,

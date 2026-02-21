@@ -37,7 +37,7 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
       mtm,
       &window.title,
       window.utilization,
-      &window.resets_at,
+      window.resets_at.as_ref(),
       if config.show_period_percentage { window.period_seconds } else { None },
       config.reset_time_format,
       config.display_mode,

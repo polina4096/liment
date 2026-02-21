@@ -32,14 +32,14 @@ impl DataProvider for DebugProvider {
         title: "5h Limit".into(),
         short_title: Some("5h".into()),
         utilization,
-        resets_at: now,
+        resets_at: Some(now),
         period_seconds: Some(5 * 3600),
       },
       UsageWindow {
         title: "7d Limit".into(),
         short_title: Some("7d".into()),
         utilization,
-        resets_at: now,
+        resets_at: Some(now),
         period_seconds: Some(7 * 86400),
       },
     ];

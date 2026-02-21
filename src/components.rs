@@ -50,39 +50,43 @@ pub fn bucket_row(
   mtm: MainThreadMarker,
   label: &str,
   utilization: f64,
-  resets_at: &Timestamp,
+  resets_at: Option<&Timestamp>,
   period_seconds: Option<i64>,
   reset_time_format: DateTimeFormat,
   display_format: DisplayMode,
 ) -> Retained<NSMenuItem> {
-  let mut reset_str = match reset_time_format {
-    DateTimeFormat::Absolute => format!("reset: {}", format_absolute_time(resets_at)),
-    DateTimeFormat::Relative => format!("resets in {}", format_reset_time(resets_at)),
-  };
+  let reset_str = resets_at.map(|resets_at| {
+    let mut reset_str = match reset_time_format {
+      DateTimeFormat::Absolute => format!("reset: {}", format_absolute_time(resets_at)),
+      DateTimeFormat::Relative => format!("resets in {}", format_reset_time(resets_at)),
+    };
 
-  if let Some(period) = period_seconds {
-    let now = Timestamp::now();
-    let remaining = resets_at.as_second() - now.as_second();
-    if remaining > 0 && period > 0 {
-      let elapsed_pct = ((period - remaining) as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
-      let display_pct = match display_format {
-        DisplayMode::Remaining => 100.0 - elapsed_pct,
-        DisplayMode::Usage => elapsed_pct,
-      };
+    if let Some(period) = period_seconds {
+      let now = Timestamp::now();
+      let remaining = resets_at.as_second() - now.as_second();
+      if remaining > 0 && period > 0 {
+        let elapsed_pct = ((period - remaining) as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
+        let display_pct = match display_format {
+          DisplayMode::Remaining => 100.0 - elapsed_pct,
+          DisplayMode::Usage => elapsed_pct,
+        };
 
-      reset_str = format!("{} ({:.0}%)", reset_str, display_pct);
+        reset_str = format!("{} ({:.0}%)", reset_str, display_pct);
+      }
     }
-  }
+
+    return reset_str;
+  });
 
   let utilization = if display_format == DisplayMode::Remaining { 100.0 - utilization } else { utilization };
-  let view = progress_row(mtm, label, utilization, &reset_str);
+  let view = progress_row(mtm, label, utilization, reset_str.as_deref());
   let item = NSMenuItem::new(mtm);
   item.setView(Some(&view));
 
   return item;
 }
 
-pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_str: &str) -> Retained<NSView> {
+pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_str: Option<&str>) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Label: "5h Limit  8%".
@@ -97,18 +101,27 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
   label_field.setFont(Some(&font));
   container.addSubview(&label_field);
 
-  // Reset time label (right-aligned).
-  let reset_field = NSTextField::labelWithString(&NSString::from_str(reset_str), mtm);
-  reset_field.noAutoresize();
-  reset_field.setEditable(false);
-  reset_field.setBezeled(false);
-  reset_field.setDrawsBackground(false);
+  // Reset time label (right-aligned), only if reset info is available.
+  if let Some(reset_str) = reset_str {
+    let reset_field = NSTextField::labelWithString(&NSString::from_str(reset_str), mtm);
+    reset_field.noAutoresize();
+    reset_field.setEditable(false);
+    reset_field.setBezeled(false);
+    reset_field.setDrawsBackground(false);
 
-  let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
-  reset_field.setFont(Some(&small_font));
-  reset_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
-  reset_field.setTextColor(Some(&NSColor::secondaryLabelColor()));
-  container.addSubview(&reset_field);
+    let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
+    reset_field.setFont(Some(&small_font));
+    reset_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
+    reset_field.setTextColor(Some(&NSColor::secondaryLabelColor()));
+    container.addSubview(&reset_field);
+
+    activate(&[
+      // Reset label: same row as label, right-aligned.
+      &reset_field.topAnchor().constraintEqualToAnchor(&label_field.topAnchor()),
+      &reset_field.leadingAnchor().constraintEqualToAnchor(&label_field.leadingAnchor()),
+      &reset_field.trailingAnchor().constraintEqualToAnchor(&label_field.trailingAnchor()),
+    ]);
+  }
 
   // Progress bar.
   let progress = NSProgressIndicator::init(mtm.alloc::<NSProgressIndicator>());
@@ -129,10 +142,6 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
     &label_field
       .trailingAnchor()
       .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
-    // Reset label: same row as label, right-aligned.
-    &reset_field.topAnchor().constraintEqualToAnchor(&label_field.topAnchor()),
-    &reset_field.leadingAnchor().constraintEqualToAnchor(&label_field.leadingAnchor()),
-    &reset_field.trailingAnchor().constraintEqualToAnchor(&label_field.trailingAnchor()),
     // Progress bar: below label, pinned to sides.
     &progress.topAnchor().constraintEqualToAnchor_constant(&label_field.bottomAnchor(), 2.0),
     &progress.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),

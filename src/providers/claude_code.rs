@@ -110,15 +110,13 @@ pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -
 
   for (title, short_title, bucket, period_secs) in buckets {
     if let Some(b) = bucket {
-      if let Some(resets_at) = b.resets_at {
-        windows.push(UsageWindow {
-          title: title.to_string(),
-          short_title: short_title.map(|s| s.to_string()),
-          utilization: b.utilization,
-          resets_at,
-          period_seconds: Some(*period_secs),
-        });
-      }
+      windows.push(UsageWindow {
+        title: title.to_string(),
+        short_title: short_title.map(|s| s.to_string()),
+        utilization: b.utilization,
+        resets_at: b.resets_at,
+        period_seconds: Some(*period_secs),
+      });
     }
   }
 
