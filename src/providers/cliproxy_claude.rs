@@ -83,7 +83,7 @@ impl CliproxyClaudeProvider {
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer $TOKEN$".to_string());
     headers.insert("Anthropic-Beta".to_string(), "oauth-2025-04-20".to_string());
-    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    headers.insert("User-Agent".to_string(), "claude-code/2.1.68".to_string());
 
     let request = ApiCallRequest {
       auth_index: self.auth_index.clone(),

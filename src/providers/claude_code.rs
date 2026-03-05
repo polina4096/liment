@@ -157,11 +157,9 @@ impl ClaudeCodeProvider {
 
     let data = results
       .into_iter()
-      .find_map(|r| {
-        match r {
-          SearchResult::Data(d) => Some(d),
-          _ => None,
-        }
+      .find_map(|r| match r {
+        SearchResult::Data(d) => Some(d),
+        _ => None,
       })
       .context("Failed to find Claude Code credentials in keychain")?;
 
@@ -216,8 +214,7 @@ impl ClaudeCodeProvider {
         log::info!("Token refreshed, retrying request");
 
         return self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e)).ok();
-      }
-      else {
+      } else {
         log::error!("Failed to refresh token from keychain");
       }
     }
@@ -236,7 +233,7 @@ impl ClaudeCodeProvider {
     let mut response = ureq::get(url)
       .header("Authorization", &format!("Bearer {}", token.expose_secret()))
       .header("anthropic-beta", "oauth-2025-04-20")
-      .header("Content-Type", "application/json")
+      .header("User-Agent", "claude-code/2.1.68")
       .call()?;
 
     return response.body_mut().read_to_string();
