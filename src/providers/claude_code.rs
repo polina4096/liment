@@ -233,7 +233,7 @@ impl ClaudeCodeProvider {
     let mut response = ureq::get(url)
       .header("Authorization", &format!("Bearer {}", token.expose_secret()))
       .header("anthropic-beta", "oauth-2025-04-20")
-      .header("User-Agent", "claude-code/2.1.68")
+      .header("User-Agent", "claude-code/2.1.71")
       .call()?;
 
     return response.body_mut().read_to_string();
