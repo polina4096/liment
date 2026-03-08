@@ -157,9 +157,11 @@ impl ClaudeCodeProvider {
 
     let data = results
       .into_iter()
-      .find_map(|r| match r {
-        SearchResult::Data(d) => Some(d),
-        _ => None,
+      .find_map(|r| {
+        match r {
+          SearchResult::Data(d) => Some(d),
+          _ => None,
+        }
       })
       .context("Failed to find Claude Code credentials in keychain")?;
 
@@ -214,7 +216,8 @@ impl ClaudeCodeProvider {
         log::info!("Token refreshed, retrying request");
 
         return self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e)).ok();
-      } else {
+      }
+      else {
         log::error!("Failed to refresh token from keychain");
       }
     }
