@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "liment"
-version = "0.1.8"
+version = "0.1.7"
 dependencies = [
  "anyhow",
  "block2",

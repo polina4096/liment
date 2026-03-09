@@ -13,8 +13,8 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
     menu.addItem(&loading_item);
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
-    menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
     menu.addItem(&refresh_item(mtm, app));
+    menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
     menu.addItem(&open_config_item(mtm, app));
     menu.addItem(&open_logs_item(mtm, app));
     menu.addItem(&quit_item(mtm, app));
