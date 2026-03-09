@@ -23,6 +23,7 @@ use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
   providers::{DataProvider, UsageData},
+  updater::{self, UpdateState, Updater},
   utils::{log::LOG_DIR, macos::schedule_timer},
   views,
 };
@@ -39,11 +40,18 @@ pub struct AppDelegateIvars {
 
   /// Hot-reloadable configuration.
   config: RefCell<Config>,
+
+  /// Auto-updater.
+  updater: Updater,
 }
 
 impl AppDelegateIvars {
   pub fn config(&self) -> std::cell::Ref<'_, Config> {
     return self.config.borrow();
+  }
+
+  pub fn update_state(&self) -> std::cell::Ref<'_, UpdateState> {
+    return self.updater.state();
   }
 }
 
@@ -92,6 +100,16 @@ define_class!(
       }
     }
 
+    #[unsafe(method(onCheckForUpdates:))]
+    fn on_check_for_updates(&self, _sender: &AnyObject) {
+      self.attempt_update();
+    }
+
+    #[unsafe(method(onInstallUpdate:))]
+    fn on_install_update(&self, _sender: &AnyObject) {
+      self.install_update();
+    }
+
   }
 
   unsafe impl NSObjectProtocol for AppDelegate {}
@@ -101,6 +119,11 @@ define_class!(
     fn did_finish_launching(&self, _notification: &NSNotification) {
       // First refresh.
       self.refresh();
+
+      // Check for updates on startup if enabled.
+      if self.ivars().config().check_updates {
+        self.attempt_update();
+      }
 
       let refetch_interval = match self.ivars().args.debug_values {
         true => 0.1,
@@ -132,6 +155,7 @@ impl AppDelegate {
       status_item,
       args,
       config: RefCell::new(config),
+      updater: Updater::new(),
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
@@ -163,6 +187,71 @@ impl AppDelegate {
         this.get(mtm).rebuild_ui(data);
       });
     });
+  }
+
+  /// Checks for updates on a background thread, updates state and menu when done.
+  fn attempt_update(&self) {
+    let mtm = self.mtm();
+    let this = MainThreadBound::new(self.retain(), mtm);
+
+    std::thread::spawn(move || {
+      let new_state = updater::check_for_update();
+
+      DispatchQueue::main().exec_async(move || {
+        let mtm = MainThreadMarker::new().expect("Must be on main thread");
+        let delegate = this.get(mtm);
+        let should_auto_install =
+          matches!(&new_state, UpdateState::Available { .. }) && delegate.ivars().config().auto_update;
+
+        delegate.ivars().updater.set_state(new_state);
+        delegate.rebuild_update_menu();
+
+        if should_auto_install {
+          delegate.install_update();
+        }
+      });
+    });
+  }
+
+  /// Installs the available update on a background thread.
+  fn install_update(&self) {
+    let state = self.ivars().updater.state().clone();
+
+    let url = match &state {
+      UpdateState::Available { download_url, .. } => download_url.clone(),
+      _ => return,
+    };
+
+    self.ivars().updater.set_state(UpdateState::Downloading);
+    self.rebuild_update_menu();
+
+    let mtm = self.mtm();
+    let this = MainThreadBound::new(self.retain(), mtm);
+
+    std::thread::spawn(move || {
+      if let Err(e) = updater::download_and_install(&url) {
+        let msg = format!("{e:#}");
+        log::error!("Update failed: {msg}");
+
+        DispatchQueue::main().exec_async(move || {
+          let mtm = MainThreadMarker::new().expect("Must be on main thread");
+          let delegate = this.get(mtm);
+
+          delegate.ivars().updater.set_state(UpdateState::Failed { error: msg });
+          delegate.rebuild_update_menu();
+        });
+      }
+    });
+  }
+
+  fn rebuild_update_menu(&self) {
+    let mtm = MainThreadMarker::from(self);
+    let status_item = &self.ivars().status_item;
+
+    if let Some(menu) = status_item.menu(mtm) {
+      let update_state = self.ivars().update_state();
+      views::update_update_item(&menu, mtm, self, &update_state);
+    }
   }
 
   fn rebuild_ui(&self, data: Option<UsageData>) {

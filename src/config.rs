@@ -50,6 +50,14 @@ pub struct Config {
   #[serde_inline_default(60)]
   pub refetch_interval: u32,
 
+  /// Whether to automatically check for updates on startup.
+  #[serde_inline_default(true)]
+  pub check_updates: bool,
+
+  /// Whether to automatically install updates when available.
+  #[serde_inline_default(false)]
+  pub auto_update: bool,
+
   /// Default data provider, the LLM subscription you use.
   #[serde_inline_default(ProviderKind::ClaudeCode)]
   pub provider: ProviderKind,
@@ -68,6 +76,8 @@ impl Default for Config {
       show_period_percentage: false,
       reset_time_format: DateTimeFormat::Relative,
       refetch_interval: 60,
+      check_updates: true,
+      auto_update: false,
       provider: ProviderKind::ClaudeCode,
       settings: ProviderSettings::default(),
     };

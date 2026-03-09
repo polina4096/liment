@@ -3,7 +3,7 @@ use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tap::Tap as _;
 
-use crate::{components, delegate::AppDelegate, providers::UsageData};
+use crate::{components, delegate::AppDelegate, providers::UsageData, updater::UpdateState};
 
 pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu> {
   return NSMenu::new(mtm).tap(|menu| {
@@ -13,6 +13,7 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
     menu.addItem(&loading_item);
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
+    menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
     menu.addItem(&refresh_item(mtm, app));
     menu.addItem(&open_config_item(mtm, app));
     menu.addItem(&open_logs_item(mtm, app));
@@ -65,12 +66,59 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
     menu.addItem(&used_item);
   }
 
-  // Separator + Refresh + Quit.
+  // Separator + Update + Refresh + Quit.
+  let update_state = app.ivars().update_state();
   menu.addItem(&NSMenuItem::separatorItem(mtm));
+  menu.addItem(&update_item(mtm, app, &update_state));
   menu.addItem(&refresh_item(mtm, app));
   menu.addItem(&open_config_item(mtm, app));
   menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
+}
+
+const UPDATE_ITEM_TAG: isize = 9001;
+
+fn update_item(mtm: MainThreadMarker, app: &AppDelegate, state: &UpdateState) -> Retained<NSMenuItem> {
+  let (title, action, enabled) = match state {
+    UpdateState::Unchecked | UpdateState::UpToDate => {
+      ("Check for Updates".to_string(), Some(sel!(onCheckForUpdates:)), true)
+    }
+
+    UpdateState::Failed { error } => {
+      log::debug!("Previous update check failed: {error}");
+      ("Check for Updates".to_string(), Some(sel!(onCheckForUpdates:)), true)
+    }
+
+    UpdateState::Available { version, .. } => (format!("Update to v{version}…"), Some(sel!(onInstallUpdate:)), true),
+
+    UpdateState::Downloading => ("Downloading Update…".to_string(), None, false),
+  };
+
+  let item = unsafe {
+    NSMenuItem::initWithTitle_action_keyEquivalent(
+      mtm.alloc::<NSMenuItem>(),
+      &NSString::from_str(&title),
+      action,
+      &NSString::from_str("u"),
+    )
+  };
+
+  unsafe { item.setTarget(Some(app)) };
+
+  item.setEnabled(enabled);
+  item.setTag(UPDATE_ITEM_TAG);
+
+  return item;
+}
+
+/// Replaces the update menu item in-place without rebuilding the entire menu.
+pub fn update_update_item(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, state: &UpdateState) {
+  if let Some(old_item) = menu.itemWithTag(UPDATE_ITEM_TAG) {
+    let index = menu.indexOfItem(&old_item);
+    menu.removeItem(&old_item);
+    let new_item = update_item(mtm, app, state);
+    menu.insertItem_atIndex(&new_item, index);
+  }
 }
 
 fn refresh_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {

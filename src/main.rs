@@ -17,6 +17,7 @@ mod config;
 mod constants;
 mod delegate;
 mod providers;
+mod updater;
 mod utils;
 mod views;
 mod watcher;
