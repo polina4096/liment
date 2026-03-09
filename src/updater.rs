@@ -50,18 +50,18 @@ pub fn check_for_update() -> UpdateState {
       return UpdateState::Failed { error: e.to_string() };
     }
 
-    Ok(info) if info.latest <= info.current => {
-      log::info!("Already up to date (v{})", info.current);
+    Ok(VersionInfo { current, latest, .. }) if latest <= current => {
+      log::info!("Already up to date (v{current})");
 
       return UpdateState::UpToDate;
     }
 
-    Ok(info) => {
-      log::info!("Update available: v{} -> v{}", info.current, info.latest);
+    Ok(VersionInfo { current, latest, latest_url }) => {
+      log::info!("Update available: v{current} -> v{latest}");
 
       return UpdateState::Available {
-        version: info.latest,
-        download_url: info.latest_url,
+        version: latest,
+        download_url: latest_url,
       };
     }
   }
@@ -152,7 +152,7 @@ fn download_and_extract(url: &str) -> anyhow::Result<Utf8PathBuf> {
 
   if !status.status.success() {
     let e = String::from_utf8_lossy(&status.stderr);
-    anyhow::bail!("unzip failed: {}", e);
+    anyhow::bail!("unzip failed: {e}");
   }
 
   // Verify the extracted app bundle contains the binary.
@@ -188,7 +188,7 @@ fn app_bundle_path() -> anyhow::Result<Utf8PathBuf> {
 /// Installs the new app and relaunches the current process.
 fn install_and_relaunch(new_app: &Utf8Path) -> anyhow::Result<()> {
   let current_app = app_bundle_path()?;
-  let backup_app = Utf8PathBuf::from(format!("{}.old", current_app));
+  let backup_app = Utf8PathBuf::from(format!("{current_app}.old"));
 
   log::info!("Installing update: {new_app} -> {current_app}");
 
@@ -206,7 +206,9 @@ fn install_and_relaunch(new_app: &Utf8Path) -> anyhow::Result<()> {
   }
 
   // Clean up backup (best-effort).
-  let _ = fs_err::remove_dir_all(&backup_app);
+  if let Err(e) = fs_err::remove_dir_all(&backup_app) {
+    log::warn!("Failed to clean up backup: {e}");
+  };
 
   log::info!("Relaunching from {current_app}");
 
