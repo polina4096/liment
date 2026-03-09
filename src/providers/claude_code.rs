@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{sync::Mutex, time::Instant};
 
 use anyhow::{Context as _, Result};
 use jiff::Timestamp;
@@ -125,6 +125,12 @@ pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -
 
 pub struct ClaudeCodeProvider {
   token: Mutex<SecretString>,
+  backoff: Mutex<BackoffState>,
+}
+
+struct BackoffState {
+  retry_after: Option<Instant>,
+  consecutive_failures: u32,
 }
 
 impl ClaudeCodeProvider {
@@ -133,7 +139,12 @@ impl ClaudeCodeProvider {
 
     let token = Self::fetch_token(settings)?;
 
-    return Ok(Self { token: Mutex::new(token) });
+    let backoff = Mutex::new(BackoffState {
+      retry_after: None,
+      consecutive_failures: 0,
+    });
+
+    return Ok(Self { token: Mutex::new(token), backoff });
   }
 
   fn fetch_token(settings: &ClaudeCodeSettings) -> Result<SecretString> {
@@ -205,6 +216,21 @@ impl ClaudeCodeProvider {
   }
 
   fn get(&self, url: &str) -> Option<String> {
+    // Check if we're in a backoff period
+    {
+      let backoff = self.backoff.lock().unwrap();
+      if let Some(retry_after) = backoff.retry_after
+        && Instant::now() < retry_after
+      {
+        log::debug!(
+          "Skipping request to {} (rate limit backoff, {}s remaining)",
+          url,
+          (retry_after - Instant::now()).as_secs()
+        );
+        return None;
+      }
+    }
+
     let result = self.get_inner(url);
 
     if let Err(ureq::Error::StatusCode(401)) = &result {
@@ -222,8 +248,27 @@ impl ClaudeCodeProvider {
       }
     }
 
+    if let Err(ureq::Error::StatusCode(429)) = &result {
+      let mut backoff = self.backoff.lock().unwrap();
+      backoff.consecutive_failures += 1;
+      let delay_secs = 60u64 * (1 << backoff.consecutive_failures.min(4));
+      backoff.retry_after = Some(Instant::now() + std::time::Duration::from_secs(delay_secs));
+      log::warn!("Rate limited (429), backing off for {}s", delay_secs);
+      return None;
+    }
+
     if let Err(ref e) = result {
       log::error!("Request failed for {}: {}", url, e);
+    }
+
+    // Reset backoff on success
+    if result.is_ok() {
+      let mut backoff = self.backoff.lock().unwrap();
+      if backoff.consecutive_failures > 0 {
+        log::info!("Request succeeded, resetting backoff");
+        backoff.consecutive_failures = 0;
+        backoff.retry_after = None;
+      }
     }
 
     return result.ok();
