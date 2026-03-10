@@ -18,7 +18,7 @@ fn sign_target() -> Option<Utf8PathBuf> {
 /// Returns true if the current executable is already code-signed.
 fn is_signed(target: &Utf8PathBuf) -> bool {
   Command::new("codesign")
-    .args(["--verify", "--quiet"])
+    .arg("-v")
     .arg(target.as_str())
     .status()
     .is_ok_and(|s| s.success())
