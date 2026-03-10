@@ -7,12 +7,16 @@ use crate::providers::{ApiUsage, DataProvider, TierInfo, UsageData, UsageWindow}
 /// Wraps another provider and overrides its data with cycling debug values.
 pub struct DebugProvider {
   tiers: Vec<TierInfo>,
+  tray_icon_svg: &'static [u8],
 }
 
 impl DebugProvider {
   pub fn new(inner: &dyn DataProvider) -> Self {
     let tiers = inner.all_tiers();
-    return Self { tiers };
+    return Self {
+      tiers,
+      tray_icon_svg: inner.tray_icon_svg(),
+    };
   }
 }
 
@@ -56,5 +60,9 @@ impl DataProvider for DebugProvider {
 
   fn all_tiers(&self) -> Vec<TierInfo> {
     return self.tiers.iter().map(|t| TierInfo { name: t.name.clone(), color: t.color }).collect();
+  }
+
+  fn tray_icon_svg(&self) -> &'static [u8] {
+    return self.tray_icon_svg;
   }
 }

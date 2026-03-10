@@ -299,4 +299,8 @@ impl DataProvider for ClaudeCodeProvider {
   fn all_tiers(&self) -> Vec<TierInfo> {
     return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
+
+  fn tray_icon_svg(&self) -> &'static [u8] {
+    return include_bytes!("../../resources/claude.svg");
+  }
 }

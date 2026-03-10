@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator as _;
 
-use super::{DataProvider, UsageData};
+use super::CliproxyClient;
 use crate::providers::{
-  TierInfo,
+  DataProvider, TierInfo, UsageData,
   claude_code::{ProfileResponse, SubscriptionTier, UsageResponse, into_usage_data},
 };
 
@@ -24,24 +23,8 @@ pub struct CliproxyClaudeSettings {
 }
 
 pub struct CliproxyClaudeProvider {
-  base_url: String,
-  management_token: SecretString,
+  client: CliproxyClient,
   auth_index: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ApiCallRequest {
-  auth_index: String,
-  method: String,
-  url: String,
-  header: HashMap<String, String>,
-}
-
-#[derive(Deserialize)]
-struct ApiCallResponse {
-  status_code: u16,
-  body: String,
 }
 
 impl CliproxyClaudeProvider {
@@ -49,8 +32,7 @@ impl CliproxyClaudeProvider {
     log::info!("Initializing CLIProxy Claude provider");
 
     return Ok(Self {
-      base_url: settings.base_url.trim_end_matches('/').to_string(),
-      management_token: SecretString::from(settings.management_token.clone()),
+      client: CliproxyClient::new(&settings.base_url, &settings.management_token),
       auth_index: settings.auth_index.clone(),
     });
   }
@@ -78,48 +60,12 @@ impl CliproxyClaudeProvider {
   }
 
   fn api_get(&self, url: &str) -> Option<String> {
-    log::debug!("Proxied GET {} via cliproxy", url);
-
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer $TOKEN$".to_string());
     headers.insert("Anthropic-Beta".to_string(), "oauth-2025-04-20".to_string());
     headers.insert("User-Agent".to_string(), "claude-code/2.1.71".to_string());
 
-    let request = ApiCallRequest {
-      auth_index: self.auth_index.clone(),
-      method: "GET".to_string(),
-      url: url.to_string(),
-      header: headers,
-    };
-
-    let endpoint = format!("{}/v0/management/api-call", self.base_url);
-    let json_body = serde_json::to_string(&request)
-      .inspect_err(|e| log::error!("Failed to serialize api-call request: {}", e))
-      .ok()?;
-
-    let mut response = ureq::post(&endpoint)
-      .header("Authorization", &format!("Bearer {}", self.management_token.expose_secret()))
-      .header("Content-Type", "application/json")
-      .send(&json_body)
-      .inspect_err(|e| log::error!("Cliproxy request failed for {}: {}", url, e))
-      .ok()?;
-
-    let response_text = response
-      .body_mut()
-      .read_to_string()
-      .inspect_err(|e| log::error!("Failed to read cliproxy response body: {}", e))
-      .ok()?;
-
-    let parsed: ApiCallResponse = serde_json::from_str(&response_text)
-      .inspect_err(|e| log::error!("Failed to parse cliproxy response: {}", e))
-      .ok()?;
-
-    if parsed.status_code != 200 {
-      log::error!("Cliproxy API returned status {}: {}", parsed.status_code, parsed.body);
-      return None;
-    }
-
-    return Some(parsed.body);
+    return self.client.api_get(&self.auth_index, url, headers);
   }
 }
 
@@ -133,5 +79,9 @@ impl DataProvider for CliproxyClaudeProvider {
 
   fn all_tiers(&self) -> Vec<TierInfo> {
     return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
+  }
+
+  fn tray_icon_svg(&self) -> &'static [u8] {
+    return include_bytes!("../../../resources/claude.svg");
   }
 }

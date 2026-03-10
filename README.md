@@ -36,6 +36,19 @@ management_token = "your-management-secret"
 auth_index = "0"
 ```
 
+### CLIProxy Codex
+
+Fetches auth metadata via CLIProxy management API, then proxies `wham/usage`.
+
+```toml
+provider = "cliproxy_codex"
+
+[settings.cliproxy_codex]
+base_url = "http://localhost:8317"
+management_token = "your-management-secret"
+auth_index = "1b3ba41df68b1b45"
+```
+
 ### General options
 
 ```toml

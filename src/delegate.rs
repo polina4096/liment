@@ -140,10 +140,19 @@ impl AppDelegate {
   pub fn new(mtm: MainThreadMarker, provider: Arc<dyn DataProvider>, args: CliArgs, config: Config) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
+    let tray_icon_svg = provider.tray_icon_svg();
 
     // Setup the app tray button with a loading placeholder.
     if let Some(button) = status_item.button(mtm) {
-      let img = Self::build_tray_image("?? ..", 0.0, "?? ..", 0.0, config.monochrome_icon, config.stats_colors);
+      let img = Self::build_tray_image(
+        tray_icon_svg,
+        "?? ..",
+        0.0,
+        "?? ..",
+        0.0,
+        config.monochrome_icon,
+        config.stats_colors,
+      );
 
       button.setImage(Some(&img));
       button.setTitle(&NSString::new());
@@ -259,11 +268,20 @@ impl AppDelegate {
     let status_item = &self.ivars().status_item;
 
     let config = self.ivars().config();
+    let tray_icon_svg = self.ivars().provider.tray_icon_svg();
 
     let Some(data) = data
     else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image("-- --", 0.0, "-- --", 0.0, config.monochrome_icon, config.stats_colors);
+        let img = Self::build_tray_image(
+          tray_icon_svg,
+          "-- --",
+          0.0,
+          "-- --",
+          0.0,
+          config.monochrome_icon,
+          config.stats_colors,
+        );
 
         tray_button.setImage(Some(&img));
       }
@@ -292,7 +310,15 @@ impl AppDelegate {
 
       let u0 = u0 / 100.0;
       let u1 = u1 / 100.0;
-      let img = Self::build_tray_image(&line1, u0, &line2, u1, config.monochrome_icon, config.stats_colors);
+      let img = Self::build_tray_image(
+        tray_icon_svg,
+        &line1,
+        u0,
+        &line2,
+        u1,
+        config.monochrome_icon,
+        config.stats_colors,
+      );
 
       tray_button.setImage(Some(&img));
     }
@@ -327,10 +353,11 @@ impl AppDelegate {
     return Retained::into_super(result);
   }
 
-  /// Renders the Claude logo and two colored lines into an NSImage for the tray button.
+  /// Renders provider logo and two colored lines into an NSImage for the tray button.
   /// Using an image instead of an attributed title allows macOS to properly
   /// dim the content on inactive displays via menu bar compositing.
   fn build_tray_image(
+    icon_svg: &'static [u8],
     line1: &str,
     p1: f64,
     line2: &str,
@@ -360,10 +387,9 @@ impl AppDelegate {
     let (width, height) = (text_x + text_width, text_height);
     let image_size = NSSize::new(width, height);
 
-    // Load the Claude logo from the embedded SVG.
-    let svg_bytes = include_bytes!("../resources/claude.svg");
-    let logo_data = unsafe { NSData::dataWithBytes_length(svg_bytes.as_ptr() as *const c_void, svg_bytes.len()) };
-    let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load Claude logo");
+    // Load provider logo from embedded SVG.
+    let logo_data = unsafe { NSData::dataWithBytes_length(icon_svg.as_ptr() as *const c_void, icon_svg.len()) };
+    let logo_img = NSImage::initWithData(NSImage::alloc(), &logo_data).expect("failed to load provider logo");
 
     logo_img.setSize(NSSize::new(logo_size, logo_size));
 

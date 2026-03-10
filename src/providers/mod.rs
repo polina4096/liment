@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::providers::{
   claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
-  cliproxy_claude::{CliproxyClaudeProvider, CliproxyClaudeSettings},
+  cliproxy::{CliproxyClaudeProvider, CliproxyClaudeSettings, CliproxyCodexProvider, CliproxyCodexSettings},
 };
 
 pub mod claude_code;
-pub mod cliproxy_claude;
+pub mod cliproxy;
 pub mod debug;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
@@ -19,12 +19,14 @@ pub mod debug;
 pub enum ProviderKind {
   ClaudeCode,
   CliproxyClaude,
+  CliproxyCodex,
 }
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct ProviderSettings {
   pub claude_code: Option<ClaudeCodeSettings>,
   pub cliproxy_claude: Option<CliproxyClaudeSettings>,
+  pub cliproxy_codex: Option<CliproxyCodexSettings>,
 }
 
 pub struct TierInfo {
@@ -74,6 +76,9 @@ pub trait DataProvider: Send + Sync {
 
   /// Returns all possible tiers for this provider.
   fn all_tiers(&self) -> Vec<TierInfo>;
+
+  /// Returns SVG bytes for tray icon.
+  fn tray_icon_svg(&self) -> &'static [u8];
 }
 
 impl ProviderKind {
@@ -92,6 +97,15 @@ impl ProviderKind {
           .context("cliproxy_claude provider requires [settings.cliproxy_claude] in config")?;
 
         return Ok(Arc::new(CliproxyClaudeProvider::new(settings)?));
+      }
+
+      ProviderKind::CliproxyCodex => {
+        let settings = settings
+          .cliproxy_codex
+          .as_ref()
+          .context("cliproxy_codex provider requires [settings.cliproxy_codex] in config")?;
+
+        return Ok(Arc::new(CliproxyCodexProvider::new(settings)?));
       }
     };
   }
