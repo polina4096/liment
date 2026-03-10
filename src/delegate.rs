@@ -210,11 +210,8 @@ impl AppDelegate {
   }
 
   pub fn reload_config(&self, new_config: Config) {
-    if new_config.provider != self.ivars().provider().kind() {
-      let provider = Self::provider_from_config(&new_config, self.ivars().args.debug_values);
-      *self.ivars().provider.borrow_mut() = provider;
-    }
-
+    let provider = Self::provider_from_config(&new_config, self.ivars().args.debug_values);
+    *self.ivars().provider.borrow_mut() = provider;
     *self.ivars().config.borrow_mut() = new_config;
 
     self.refresh();
