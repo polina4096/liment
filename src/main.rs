@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{process::Command, sync::LazyLock};
 
 use anyhow::{Context as _, Result};
 use camino::Utf8PathBuf;
@@ -36,6 +36,10 @@ struct CliArgs {
   /// Open the logs directory in the default file manager.
   #[arg(long)]
   open_logs: bool,
+
+  /// Ad-hoc codesign the current executable and restart.
+  #[arg(long)]
+  self_sign: bool,
 }
 
 static CONFIG_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
@@ -68,6 +72,12 @@ fn main() -> Result<()> {
     return Ok(());
   }
 
+  if args.self_sign {
+    self_sign()?;
+
+    return Ok(());
+  }
+
   // Load configuration.
   let config = Figment::new()
     .merge(Toml::file(&*CONFIG_PATH))
@@ -93,6 +103,38 @@ fn main() -> Result<()> {
   app.run();
 
   drop(watcher);
+
+  return Ok(());
+}
+
+/// Ad-hoc codesigns the current executable (or .app bundle) and relaunches it.
+fn self_sign() -> Result<()> {
+  let exe = Utf8PathBuf::try_from(std::env::current_exe().context("Failed to get current exe")?)
+    .context("Exe path is not valid UTF-8")?;
+
+  // If running from a .app bundle, sign the bundle root instead of the bare binary.
+  let sign_target = exe
+    .ancestors()
+    .find(|p| p.as_str().ends_with(".app"))
+    .map(|p| p.to_owned())
+    .unwrap_or_else(|| exe.clone());
+
+  log::info!("Ad-hoc signing: {sign_target}");
+
+  let status = Command::new("codesign")
+    .args(["--force", "--sign", "-", sign_target.as_str()])
+    .status()
+    .context("Failed to run codesign")?;
+
+  if !status.success() {
+    anyhow::bail!("codesign exited with {status}");
+  }
+
+  log::info!("Relaunching: {exe}");
+
+  Command::new(&*exe)
+    .spawn()
+    .context("Failed to relaunch")?;
 
   return Ok(());
 }

@@ -58,6 +58,10 @@ pub struct Config {
   #[serde_inline_default(false)]
   pub auto_update: bool,
 
+  /// Whether to ad-hoc codesign the app if not already signed (enables notifications).
+  #[serde_inline_default(false)]
+  pub auto_codesign: bool,
+
   /// Default data provider, the LLM subscription you use.
   #[serde_inline_default(ProviderKind::ClaudeCode)]
   pub provider: ProviderKind,
@@ -78,6 +82,7 @@ impl Default for Config {
       refetch_interval: 60,
       check_updates: true,
       auto_update: false,
+      auto_codesign: false,
       provider: ProviderKind::ClaudeCode,
       settings: ProviderSettings::default(),
     };

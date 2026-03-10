@@ -25,7 +25,7 @@ use crate::{
   config::{Config, DisplayMode},
   providers::{DataProvider, NullProvider, ProviderKind, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
-  utils::{log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
+  utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
   views,
 };
 
@@ -138,6 +138,12 @@ define_class!(
       // Request notification permissions.
       notification::request_authorization();
 
+      // Auto-codesign if enabled and not already signed.
+      if self.ivars().config().auto_codesign && codesign::ensure_signed() {
+        NSApplication::sharedApplication(self.mtm()).terminate(None);
+        return;
+      }
+
       // First refresh.
       self.refresh();
 
@@ -213,6 +219,12 @@ impl AppDelegate {
   }
 
   pub fn reload_config(&self, new_config: Config) {
+    // Auto-codesign if enabled and not already signed.
+    if new_config.auto_codesign && codesign::ensure_signed() {
+      NSApplication::sharedApplication(self.mtm()).terminate(None);
+      return;
+    }
+
     let provider = Self::provider_from_config(&new_config, self.ivars().args.debug_values);
     *self.ivars().provider.borrow_mut() = provider;
     *self.ivars().config.borrow_mut() = new_config;
