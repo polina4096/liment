@@ -1,5 +1,5 @@
 use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
-use objc2_app_kit::{NSControlStateValueOn, NSMenu, NSMenuItem};
+use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tap::Tap as _;
 
@@ -190,9 +190,8 @@ fn provider_item(mtm: MainThreadMarker, app: &AppDelegate, current: ProviderKind
     unsafe { sub_item.setTarget(Some(app)) };
     sub_item.setTag(i as isize);
 
-    if kind == current {
-      sub_item.setState(NSControlStateValueOn);
-    }
+    let state = if kind == current { NSControlStateValueOn } else { NSControlStateValueOff };
+    sub_item.setState(state);
 
     submenu.addItem(&sub_item);
   }
