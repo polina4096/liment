@@ -49,6 +49,19 @@ management_token = "your-management-secret"
 auth_index = "1b3ba41df68b1b45"
 ```
 
+### Notifications
+
+All control center notifications on macOS require the app to be code-signed. If you're running a non-signed build (which you probably are, since release builds are not signed), you can either:
+
+- `/Applications/liment.app/Contents/MacOS/liment --self-sign` to ad-hoc sign and relaunch.
+- Enable automatic signing in the config, which effectively does the same thing but on startup.
+
+```toml
+auto_codesign = true
+```
+
+This will ad-hoc sign the app on startup if needed and relaunch it automatically.
+
 ### General options
 
 ```toml
