@@ -25,7 +25,7 @@ use crate::{
   config::{Config, DisplayMode},
   providers::{DataProvider, NullProvider, ProviderKind, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
-  utils::{log::LOG_DIR, macos::schedule_timer, toml::serialize_to_item},
+  utils::{log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
   views,
 };
 
@@ -135,6 +135,9 @@ define_class!(
   unsafe impl NSApplicationDelegate for AppDelegate {
     #[unsafe(method(applicationDidFinishLaunching:))]
     fn did_finish_launching(&self, _notification: &NSNotification) {
+      // Request notification permissions.
+      notification::request_authorization();
+
       // First refresh.
       self.refresh();
 
@@ -221,7 +224,9 @@ impl AppDelegate {
     let provider = match config.provider.into_provider(&config.settings) {
       Ok(provider) => provider,
       Err(e) => {
-        log::error!("Failed to create provider: {e:#}");
+        let msg = format!("Failed to create provider: {e:#}");
+        log::error!("{msg}");
+        notification::send_error(&msg);
         Arc::new(NullProvider)
       }
     };

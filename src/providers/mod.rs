@@ -5,9 +5,12 @@ use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
-use crate::providers::{
-  claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
-  cliproxy::{CliproxyClaudeProvider, CliproxyClaudeSettings, CliproxyCodexProvider, CliproxyCodexSettings},
+use crate::{
+  providers::{
+    claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
+    cliproxy::{CliproxyClaudeProvider, CliproxyClaudeSettings, CliproxyCodexProvider, CliproxyCodexSettings},
+  },
+  utils::notification,
 };
 
 pub mod claude_code;
@@ -138,7 +141,9 @@ impl ProviderKind {
       }
 
       ProviderKind::Unknown => {
-        log::error!("Unknown provider in config, falling back to null provider");
+        let msg = "Unknown provider in config, falling back to null provider";
+        log::error!("{msg}");
+        notification::send_error(msg);
 
         return Ok(Arc::new(NullProvider));
       }
