@@ -1,6 +1,7 @@
 use std::{cell::RefCell, ffi::c_void, sync::Arc};
 
 use block2::RcBlock;
+use strum::IntoEnumIterator as _;
 use dispatch2::{DispatchQueue, MainThreadBound};
 use objc2::{
   AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
@@ -22,9 +23,9 @@ use tap::Tap;
 use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
-  providers::{DataProvider, NullProvider, UsageData, debug::DebugProvider},
+  providers::{DataProvider, NullProvider, ProviderKind, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
-  utils::{log::LOG_DIR, macos::schedule_timer},
+  utils::{log::LOG_DIR, macos::schedule_timer, toml::serialize_to_item},
   views,
 };
 
@@ -114,6 +115,19 @@ define_class!(
       self.install_update();
     }
 
+    #[unsafe(method(onChangeProvider:))]
+    fn on_change_provider(&self, sender: &AnyObject) {
+      let tag: isize = unsafe { msg_send![sender, tag] };
+      let Some(kind) = ProviderKind::iter()
+        .filter(|k| *k != ProviderKind::Unknown)
+        .nth(tag as usize)
+      else {
+        return;
+      };
+
+      self.change_provider(kind);
+    }
+
   }
 
   unsafe impl NSObjectProtocol for AppDelegate {}
@@ -162,6 +176,37 @@ impl AppDelegate {
     this.ivars().status_item.setMenu(Some(&loading_menu));
 
     return this;
+  }
+
+  fn change_provider(&self, kind: ProviderKind) {
+    if kind == self.ivars().provider().kind() {
+      return;
+    }
+
+    // Update the config file on disk.
+    let config_str = match fs_err::read_to_string(&*CONFIG_PATH) {
+      Ok(s) => s,
+      Err(e) => {
+        log::error!("Failed to read config: {e}");
+        return;
+      }
+    };
+
+    let mut doc: toml_edit::DocumentMut = match config_str.parse() {
+      Ok(d) => d,
+      Err(e) => {
+        log::error!("Failed to parse config: {e}");
+        return;
+      }
+    };
+
+    doc["provider"] = serialize_to_item(kind);
+
+    if let Err(e) = fs_err::write(&*CONFIG_PATH, doc.to_string()) {
+      log::error!("Failed to write config: {e}");
+    }
+
+    // The file watcher will pick up the change and call reload_config.
   }
 
   pub fn reload_config(&self, new_config: Config) {

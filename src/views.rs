@@ -1,9 +1,16 @@
 use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
-use objc2_app_kit::{NSMenu, NSMenuItem};
+use objc2_app_kit::{NSControlStateValueOn, NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 use tap::Tap as _;
 
-use crate::{components, delegate::AppDelegate, providers::UsageData, updater::UpdateState};
+use strum::IntoEnumIterator as _;
+
+use crate::{
+  components,
+  delegate::AppDelegate,
+  providers::{ProviderKind, UsageData},
+  updater::UpdateState,
+};
 
 pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu> {
   return NSMenu::new(mtm).tap(|menu| {
@@ -12,9 +19,12 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
     loading_item.setEnabled(false);
     menu.addItem(&loading_item);
 
+    let current_provider = app.ivars().provider().kind();
+
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&refresh_item(mtm, app));
     menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
+    menu.addItem(&provider_item(mtm, app, current_provider));
     menu.addItem(&open_config_item(mtm, app));
     menu.addItem(&open_logs_item(mtm, app));
     menu.addItem(&quit_item(mtm, app));
@@ -68,9 +78,11 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
 
   // Separator + Update + Refresh + Quit.
   let update_state = app.ivars().update_state();
+  let current_provider = app.ivars().provider().kind();
   menu.addItem(&NSMenuItem::separatorItem(mtm));
   menu.addItem(&update_item(mtm, app, &update_state));
   menu.addItem(&refresh_item(mtm, app));
+  menu.addItem(&provider_item(mtm, app, current_provider));
   menu.addItem(&open_config_item(mtm, app));
   menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
@@ -157,6 +169,36 @@ fn open_logs_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuIt
     )
   };
   unsafe { item.setTarget(Some(app)) };
+  return item;
+}
+
+fn provider_item(mtm: MainThreadMarker, app: &AppDelegate, current: ProviderKind) -> Retained<NSMenuItem> {
+  let item = NSMenuItem::new(mtm);
+  item.setTitle(&NSString::from_str("Change Provider"));
+
+  let submenu = NSMenu::new(mtm);
+  for (i, kind) in ProviderKind::iter().filter(|k| *k != ProviderKind::Unknown).enumerate() {
+    let sub_item = unsafe {
+      NSMenuItem::initWithTitle_action_keyEquivalent(
+        mtm.alloc::<NSMenuItem>(),
+        &NSString::from_str(&kind.to_string()),
+        Some(sel!(onChangeProvider:)),
+        &NSString::new(),
+      )
+    };
+
+    unsafe { sub_item.setTarget(Some(app)) };
+    sub_item.setTag(i as isize);
+
+    if kind == current {
+      sub_item.setState(NSControlStateValueOn);
+    }
+
+    submenu.addItem(&sub_item);
+  }
+
+  item.setSubmenu(Some(&submenu));
+
   return item;
 }
 

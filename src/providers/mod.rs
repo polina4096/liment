@@ -14,11 +14,14 @@ pub mod claude_code;
 pub mod cliproxy;
 pub mod debug;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, strum::Display, strum::EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
+  #[strum(to_string = "Claude Code")]
   ClaudeCode,
+  #[strum(to_string = "Cliproxy Claude")]
   CliproxyClaude,
+  #[strum(to_string = "Cliproxy Codex")]
   CliproxyCodex,
   #[serde(other)]
   Unknown,
