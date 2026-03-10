@@ -23,8 +23,8 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&refresh_item(mtm, app));
-    menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
     menu.addItem(&provider_item(mtm, app, current_provider));
+    menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
     menu.addItem(&open_config_item(mtm, app));
     menu.addItem(&open_logs_item(mtm, app));
     menu.addItem(&quit_item(mtm, app));
@@ -80,9 +80,9 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
   let update_state = app.ivars().update_state();
   let current_provider = app.ivars().provider().kind();
   menu.addItem(&NSMenuItem::separatorItem(mtm));
-  menu.addItem(&update_item(mtm, app, &update_state));
   menu.addItem(&refresh_item(mtm, app));
   menu.addItem(&provider_item(mtm, app, current_provider));
+  menu.addItem(&update_item(mtm, app, &update_state));
   menu.addItem(&open_config_item(mtm, app));
   menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
