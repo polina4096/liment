@@ -89,6 +89,7 @@ pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, da
 }
 
 const UPDATE_ITEM_TAG: isize = 9001;
+const PROVIDER_ITEM_TAG: isize = 9002;
 
 fn update_item(mtm: MainThreadMarker, app: &AppDelegate, state: &UpdateState) -> Retained<NSMenuItem> {
   let (title, action, enabled) = match state {
@@ -175,6 +176,7 @@ fn open_logs_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuIt
 fn provider_item(mtm: MainThreadMarker, app: &AppDelegate, current: ProviderKind) -> Retained<NSMenuItem> {
   let item = NSMenuItem::new(mtm);
   item.setTitle(&NSString::from_str("Change Provider"));
+  item.setTag(PROVIDER_ITEM_TAG);
 
   let submenu = NSMenu::new(mtm);
   for (i, kind) in ProviderKind::iter().filter(|k| *k != ProviderKind::Unknown).enumerate() {
@@ -199,6 +201,16 @@ fn provider_item(mtm: MainThreadMarker, app: &AppDelegate, current: ProviderKind
   item.setSubmenu(Some(&submenu));
 
   return item;
+}
+
+/// Replaces the provider menu item in-place without rebuilding the entire menu.
+pub fn update_provider_item(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, current: ProviderKind) {
+  if let Some(old_item) = menu.itemWithTag(PROVIDER_ITEM_TAG) {
+    let index = menu.indexOfItem(&old_item);
+    menu.removeItem(&old_item);
+    let new_item = provider_item(mtm, app, current);
+    menu.insertItem_atIndex(&new_item, index);
+  }
 }
 
 fn quit_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {

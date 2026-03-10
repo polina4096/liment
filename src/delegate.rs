@@ -229,6 +229,14 @@ impl AppDelegate {
     *self.ivars().provider.borrow_mut() = provider;
     *self.ivars().config.borrow_mut() = new_config;
 
+    // Update the provider checkmark immediately so it reflects the actual provider,
+    // even if the fetch hasn't completed yet (or returns None for NullProvider).
+    let mtm = self.mtm();
+    if let Some(menu) = self.ivars().status_item.menu(mtm) {
+      let current = self.ivars().provider().kind();
+      views::update_provider_item(&menu, mtm, self, current);
+    }
+
     self.refresh();
   }
 
