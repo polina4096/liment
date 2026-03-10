@@ -22,7 +22,7 @@ use tap::Tap;
 use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
-  providers::{DataProvider, UsageData},
+  providers::{DataProvider, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
   utils::{log::LOG_DIR, macos::schedule_timer},
   views,
@@ -30,7 +30,7 @@ use crate::{
 
 pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
-  provider: Arc<dyn DataProvider>,
+  provider: RefCell<Arc<dyn DataProvider>>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
@@ -46,6 +46,10 @@ pub struct AppDelegateIvars {
 }
 
 impl AppDelegateIvars {
+  pub fn provider(&self) -> std::cell::Ref<'_, Arc<dyn DataProvider>> {
+    return self.provider.borrow();
+  }
+
   pub fn config(&self) -> std::cell::Ref<'_, Config> {
     return self.config.borrow();
   }
@@ -140,27 +144,15 @@ impl AppDelegate {
   pub fn new(mtm: MainThreadMarker, provider: Arc<dyn DataProvider>, args: CliArgs, config: Config) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
-    let tray_icon_svg = provider.tray_icon_svg();
 
-    // Setup the app tray button with a loading placeholder.
-    if let Some(button) = status_item.button(mtm) {
-      let img = Self::build_tray_image(
-        tray_icon_svg,
-        "?? ..",
-        0.0,
-        "?? ..",
-        0.0,
-        config.monochrome_icon,
-        config.stats_colors,
-      );
-
-      button.setImage(Some(&img));
-      button.setTitle(&NSString::new());
-    }
+    let provider = match args.debug_values {
+      true => Arc::new(DebugProvider::new(&*provider)) as Arc<dyn DataProvider>,
+      false => provider,
+    };
 
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
-      provider,
+      provider: RefCell::new(provider),
       status_item,
       args,
       config: RefCell::new(config),
@@ -175,7 +167,22 @@ impl AppDelegate {
     return this;
   }
 
+  /// Swaps the current provider, wrapping with `DebugProvider` if debug mode is active.
+  fn swap_provider(&self, provider: Arc<dyn DataProvider>) {
+    let provider = match self.ivars().args.debug_values {
+      true => Arc::new(DebugProvider::new(&*provider)),
+      false => provider,
+    };
+
+    *self.ivars().provider.borrow_mut() = provider;
+  }
+
   pub fn reload_config(&self, new_config: Config) {
+    match new_config.provider.into_provider(&new_config.settings) {
+      Ok(provider) => self.swap_provider(provider),
+      Err(e) => log::error!("Failed to create provider: {e:#}"),
+    }
+
     *self.ivars().config.borrow_mut() = new_config;
 
     self.refresh();
@@ -183,7 +190,7 @@ impl AppDelegate {
 
   /// Refetches latest data from the API and updates the UI.
   fn refresh(&self) {
-    let provider = Arc::clone(&self.ivars().provider);
+    let provider = Arc::clone(&self.ivars().provider());
     let mtm = self.mtm();
     let this = MainThreadBound::new(self.retain(), mtm);
 
@@ -273,7 +280,7 @@ impl AppDelegate {
     let status_item = &self.ivars().status_item;
 
     let config = self.ivars().config();
-    let tray_icon_svg = self.ivars().provider.tray_icon_svg();
+    let tray_icon_svg = self.ivars().provider().tray_icon_svg();
 
     let Some(data) = data
     else {

@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use anyhow::{Context as _, Result};
 use camino::Utf8PathBuf;
@@ -10,7 +10,7 @@ use figment2::{
 use objc2::{MainThreadMarker, runtime::ProtocolObject};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
-use crate::{config::Config, delegate::AppDelegate, providers::debug::DebugProvider, watcher::watch_config};
+use crate::{config::Config, delegate::AppDelegate, watcher::watch_config};
 
 mod components;
 mod config;
@@ -83,11 +83,6 @@ fn main() -> Result<()> {
   log::info!("Selected provider: {:?}", config.provider);
 
   let provider = config.provider.into_provider(&config.settings)?;
-  let provider = match args.debug_values {
-    true => Arc::new(DebugProvider::new(&*provider)),
-    false => provider,
-  };
-
   let delegate = AppDelegate::new(mtm, provider, args, config);
 
   // Watch config file for changes.
