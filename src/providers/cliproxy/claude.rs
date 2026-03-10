@@ -6,7 +6,7 @@ use strum::IntoEnumIterator as _;
 
 use super::CliproxyClient;
 use crate::providers::{
-  DataProvider, TierInfo, UsageData,
+  DataProvider, ProviderKind, TierInfo, UsageData,
   claude_code::{ProfileResponse, SubscriptionTier, UsageResponse, into_usage_data},
 };
 
@@ -70,6 +70,10 @@ impl CliproxyClaudeProvider {
 }
 
 impl DataProvider for CliproxyClaudeProvider {
+  fn kind(&self) -> ProviderKind {
+    return ProviderKind::CliproxyClaude;
+  }
+
   fn fetch_data(&self) -> Option<UsageData> {
     let usage = self.fetch_usage()?;
     let profile = self.fetch_profile();

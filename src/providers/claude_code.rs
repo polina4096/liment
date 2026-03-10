@@ -8,7 +8,7 @@ use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator as _;
 
-use super::{DataProvider, UsageData};
+use super::{DataProvider, ProviderKind, UsageData};
 use crate::providers::{ApiUsage, TierInfo, UsageWindow};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -289,6 +289,10 @@ impl ClaudeCodeProvider {
 }
 
 impl DataProvider for ClaudeCodeProvider {
+  fn kind(&self) -> ProviderKind {
+    return ProviderKind::ClaudeCode;
+  }
+
   fn fetch_data(&self) -> Option<UsageData> {
     let usage = self.fetch_usage()?;
     let profile = self.fetch_profile();

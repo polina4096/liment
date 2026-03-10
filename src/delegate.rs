@@ -22,7 +22,7 @@ use tap::Tap;
 use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
-  providers::{DataProvider, UsageData, debug::DebugProvider},
+  providers::{DataProvider, NullProvider, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
   utils::{log::LOG_DIR, macos::schedule_timer},
   views,
@@ -141,14 +141,11 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, provider: Arc<dyn DataProvider>, args: CliArgs, config: Config) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, args: CliArgs, config: Config) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
-    let provider = match args.debug_values {
-      true => Arc::new(DebugProvider::new(&*provider)) as Arc<dyn DataProvider>,
-      false => provider,
-    };
+    let provider = Self::provider_from_config(&config, args.debug_values);
 
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
@@ -167,25 +164,30 @@ impl AppDelegate {
     return this;
   }
 
-  /// Swaps the current provider, wrapping with `DebugProvider` if debug mode is active.
-  fn swap_provider(&self, provider: Arc<dyn DataProvider>) {
-    let provider = match self.ivars().args.debug_values {
-      true => Arc::new(DebugProvider::new(&*provider)),
-      false => provider,
-    };
-
-    *self.ivars().provider.borrow_mut() = provider;
-  }
-
   pub fn reload_config(&self, new_config: Config) {
-    match new_config.provider.into_provider(&new_config.settings) {
-      Ok(provider) => self.swap_provider(provider),
-      Err(e) => log::error!("Failed to create provider: {e:#}"),
+    if new_config.provider != self.ivars().provider().kind() {
+      let provider = Self::provider_from_config(&new_config, self.ivars().args.debug_values);
+      *self.ivars().provider.borrow_mut() = provider;
     }
 
     *self.ivars().config.borrow_mut() = new_config;
 
     self.refresh();
+  }
+
+  fn provider_from_config(config: &Config, debug_values: bool) -> Arc<dyn DataProvider> {
+    let provider = match config.provider.into_provider(&config.settings) {
+      Ok(provider) => provider,
+      Err(e) => {
+        log::error!("Failed to create provider: {e:#}");
+        Arc::new(NullProvider)
+      }
+    };
+
+    return match debug_values {
+      true => Arc::new(DebugProvider::new(&*provider)),
+      false => provider,
+    };
   }
 
   /// Refetches latest data from the API and updates the UI.

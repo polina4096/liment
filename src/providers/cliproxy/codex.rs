@@ -6,7 +6,7 @@ use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
 use super::CliproxyClient;
-use crate::providers::{DataProvider, TierInfo, UsageData, UsageWindow};
+use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CliproxyCodexSettings {
@@ -115,6 +115,10 @@ impl CliproxyCodexProvider {
 }
 
 impl DataProvider for CliproxyCodexProvider {
+  fn kind(&self) -> ProviderKind {
+    return ProviderKind::CliproxyCodex;
+  }
+
   fn fetch_data(&self) -> Option<UsageData> {
     let usage = self.fetch_usage()?;
     let mut windows = Vec::new();

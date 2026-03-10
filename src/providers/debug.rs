@@ -2,10 +2,11 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 
-use crate::providers::{ApiUsage, DataProvider, TierInfo, UsageData, UsageWindow};
+use crate::providers::{ApiUsage, DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
 
 /// Wraps another provider and overrides its data with cycling debug values.
 pub struct DebugProvider {
+  kind: ProviderKind,
   tiers: Vec<TierInfo>,
   tray_icon_svg: &'static [u8],
 }
@@ -14,6 +15,7 @@ impl DebugProvider {
   pub fn new(inner: &dyn DataProvider) -> Self {
     let tiers = inner.all_tiers();
     return Self {
+      kind: inner.kind(),
       tiers,
       tray_icon_svg: inner.tray_icon_svg(),
     };
@@ -21,6 +23,10 @@ impl DebugProvider {
 }
 
 impl DataProvider for DebugProvider {
+  fn kind(&self) -> ProviderKind {
+    return self.kind;
+  }
+
   fn fetch_data(&self) -> Option<UsageData> {
     let secs = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
 

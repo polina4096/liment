@@ -82,8 +82,7 @@ fn main() -> Result<()> {
 
   log::info!("Selected provider: {:?}", config.provider);
 
-  let provider = config.provider.into_provider(&config.settings)?;
-  let delegate = AppDelegate::new(mtm, provider, args, config);
+  let delegate = AppDelegate::new(mtm, args, config);
 
   // Watch config file for changes.
   let watcher = watch_config(&delegate, mtm).inspect_err(|e| log::warn!("{e:#}")).ok();

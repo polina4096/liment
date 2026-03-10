@@ -20,6 +20,8 @@ pub enum ProviderKind {
   ClaudeCode,
   CliproxyClaude,
   CliproxyCodex,
+  #[serde(other)]
+  Unknown,
 }
 
 #[derive(Deserialize, Serialize, Default)]
@@ -71,6 +73,9 @@ pub struct UsageWindow {
 }
 
 pub trait DataProvider: Send + Sync {
+  /// Returns the kind of this provider.
+  fn kind(&self) -> ProviderKind;
+
   /// Fetches usage data for the provider.
   fn fetch_data(&self) -> Option<UsageData>;
 
@@ -79,6 +84,27 @@ pub trait DataProvider: Send + Sync {
 
   /// Returns SVG bytes for tray icon.
   fn tray_icon_svg(&self) -> &'static [u8];
+}
+
+/// No-op provider used when the configured provider is unknown or unavailable.
+pub struct NullProvider;
+
+impl DataProvider for NullProvider {
+  fn kind(&self) -> ProviderKind {
+    return ProviderKind::Unknown;
+  }
+
+  fn fetch_data(&self) -> Option<UsageData> {
+    return None;
+  }
+
+  fn all_tiers(&self) -> Vec<TierInfo> {
+    return vec![];
+  }
+
+  fn tray_icon_svg(&self) -> &'static [u8] {
+    return b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'/>";
+  }
 }
 
 impl ProviderKind {
@@ -106,6 +132,12 @@ impl ProviderKind {
           .context("cliproxy_codex provider requires [settings.cliproxy_codex] in config")?;
 
         return Ok(Arc::new(CliproxyCodexProvider::new(settings)?));
+      }
+
+      ProviderKind::Unknown => {
+        log::error!("Unknown provider in config, falling back to null provider");
+
+        return Ok(Arc::new(NullProvider));
       }
     };
   }
