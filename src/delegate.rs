@@ -102,7 +102,7 @@ define_class!(
 
     #[unsafe(method(onCheckForUpdates:))]
     fn on_check_for_updates(&self, _sender: &AnyObject) {
-      self.attempt_update();
+      self.attempt_update(true);
     }
 
     #[unsafe(method(onInstallUpdate:))]
@@ -122,7 +122,7 @@ define_class!(
 
       // Check for updates on startup if enabled.
       if self.ivars().config().check_updates {
-        self.attempt_update();
+        self.attempt_update(false);
       }
 
       let refetch_interval = match self.ivars().args.debug_values {
@@ -199,7 +199,8 @@ impl AppDelegate {
   }
 
   /// Checks for updates on a background thread, updates state and menu when done.
-  fn attempt_update(&self) {
+  /// If `reopen_menu` is true, reopens the menu when an update is available.
+  fn attempt_update(&self, reopen_menu: bool) {
     let mtm = self.mtm();
     let this = MainThreadBound::new(self.retain(), mtm);
 
@@ -209,14 +210,18 @@ impl AppDelegate {
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread");
         let delegate = this.get(mtm);
-        let should_auto_install =
-          matches!(&new_state, UpdateState::Available { .. }) && delegate.ivars().config().auto_update;
+        let is_available = matches!(&new_state, UpdateState::Available { .. });
+        let should_auto_install = is_available && delegate.ivars().config().auto_update;
 
         delegate.ivars().updater.set_state(new_state);
         delegate.rebuild_update_menu();
 
         if should_auto_install {
           delegate.install_update();
+        } else if reopen_menu && is_available {
+          if let Some(button) = delegate.ivars().status_item.button(mtm) {
+            unsafe { button.performClick(None) };
+          }
         }
       });
     });
