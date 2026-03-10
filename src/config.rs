@@ -1,7 +1,7 @@
 use anyhow::Context as _;
 use documented::DocumentedFields;
 use serde::{Deserialize, Serialize};
-use serde_inline_default::serde_inline_default;
+use smart_default::SmartDefault;
 use toml_edit::DocumentMut;
 
 use crate::{
@@ -23,70 +23,48 @@ pub enum DateTimeFormat {
   Absolute,
 }
 
-#[serde_inline_default]
-#[derive(Deserialize, Serialize, DocumentedFields)]
+#[derive(SmartDefault, Deserialize, Serialize, DocumentedFields)]
+#[serde(default)]
 pub struct Config {
   /// Whether to render the tray icon in monochrome.
-  #[serde_inline_default(true)]
+  #[default = true]
   pub monochrome_icon: bool,
 
   /// Whether to color the tray stats by utilization level.
-  #[serde_inline_default(true)]
+  #[default = true]
   pub stats_colors: bool,
 
   /// Display mode: "usage" or "remaining".
-  #[serde_inline_default(DisplayMode::Usage)]
+  #[default(DisplayMode::Usage)]
   pub display_mode: DisplayMode,
 
   /// Whether to show period percentage next to "resets in".
-  #[serde_inline_default(false)]
   pub show_period_percentage: bool,
 
   /// Reset time format: "relative" (resets in 3h) or "absolute" (resets on 13 Feb, 14:00).
-  #[serde_inline_default(DateTimeFormat::Relative)]
+  #[default(DateTimeFormat::Relative)]
   pub reset_time_format: DateTimeFormat,
 
   /// How often to refetch usage data, in seconds.
-  #[serde_inline_default(60)]
+  #[default = 60]
   pub refetch_interval: u32,
 
   /// Whether to automatically check for updates on startup.
-  #[serde_inline_default(true)]
+  #[default = true]
   pub check_updates: bool,
 
   /// Whether to automatically install updates when available.
-  #[serde_inline_default(false)]
   pub auto_update: bool,
 
   /// Whether to ad-hoc codesign the app if not already signed (enables notifications).
-  #[serde_inline_default(false)]
   pub auto_codesign: bool,
 
   /// Default data provider, the LLM subscription you use.
-  #[serde_inline_default(ProviderKind::ClaudeCode)]
+  #[default(ProviderKind::ClaudeCode)]
   pub provider: ProviderKind,
 
   /// Provider-specific settings.
-  #[serde(default)]
   pub settings: ProviderSettings,
-}
-
-impl Default for Config {
-  fn default() -> Self {
-    return Self {
-      monochrome_icon: true,
-      stats_colors: true,
-      display_mode: DisplayMode::Usage,
-      show_period_percentage: false,
-      reset_time_format: DateTimeFormat::Relative,
-      refetch_interval: 60,
-      check_updates: true,
-      auto_update: false,
-      auto_codesign: false,
-      provider: ProviderKind::ClaudeCode,
-      settings: ProviderSettings::default(),
-    };
-  }
 }
 
 impl Config {
