@@ -110,8 +110,7 @@ fn fetch_latest_release() -> anyhow::Result<VersionInfo> {
 
   let tag = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
   let latest = Version::parse(tag).context("Failed to parse latest version")?;
-  let current_str =
-    std::env::var(LIMENT_OVERRIDE_VERSION).unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
+  let current_str = std::env::var(LIMENT_OVERRIDE_VERSION).unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
   let current = Version::parse(&current_str).context("Failed to parse current version")?;
 
   log::info!("Current version: {current}, latest: {latest}");

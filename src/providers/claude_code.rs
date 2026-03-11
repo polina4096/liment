@@ -26,6 +26,43 @@ pub struct UsageResponse {
   pub extra_usage: Option<ExtraUsage>,
 }
 
+impl From<UsageResponse> for UsageData {
+  fn from(usage: UsageResponse) -> Self {
+    let api_usage = usage.extra_usage.as_ref().and_then(|extra| {
+      if !extra.is_enabled {
+        return None;
+      }
+
+      return Some(ApiUsage {
+        usage_usd: extra.used_credits / 100.0,
+        limit_usd: Some(extra.monthly_limit / 100.0),
+      });
+    });
+
+    let mut windows = Vec::new();
+    let buckets: &[(&str, Option<&str>, &Option<UsageBucket>, i64)] = &[
+      ("5h Limit", Some("5h"), &usage.five_hour, 5 * 3600),
+      ("7d Limit", Some("7d"), &usage.seven_day, 7 * 86400),
+      ("7d Sonnet", None, &usage.seven_day_sonnet, 7 * 86400),
+      ("7d Opus", None, &usage.seven_day_opus, 7 * 86400),
+    ];
+
+    for (title, short_title, bucket, period_secs) in buckets {
+      if let Some(b) = bucket {
+        windows.push(UsageWindow {
+          title: title.to_string(),
+          short_title: short_title.map(|s| s.to_string()),
+          utilization: b.utilization,
+          resets_at: b.resets_at,
+          period_seconds: Some(*period_secs),
+        });
+      }
+    }
+
+    return UsageData { api_usage, windows };
+  }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageBucket {
   pub utilization: f64,
@@ -84,43 +121,6 @@ impl std::fmt::Display for SubscriptionTier {
       SubscriptionTier::Max20x => write!(f, "Max 20x"),
     };
   }
-}
-
-pub fn into_usage_data(usage: UsageResponse, profile: Option<ProfileResponse>) -> UsageData {
-  let account_tier = profile.map(|p| p.organization.rate_limit_tier.tier_info());
-
-  let api_usage = usage.extra_usage.as_ref().and_then(|extra| {
-    if !extra.is_enabled {
-      return None;
-    }
-
-    return Some(ApiUsage {
-      usage_usd: extra.used_credits / 100.0,
-      limit_usd: Some(extra.monthly_limit / 100.0),
-    });
-  });
-
-  let mut windows = Vec::new();
-  let buckets: &[(&str, Option<&str>, &Option<UsageBucket>, i64)] = &[
-    ("5h Limit", Some("5h"), &usage.five_hour, 5 * 3600),
-    ("7d Limit", Some("7d"), &usage.seven_day, 7 * 86400),
-    ("7d Sonnet", None, &usage.seven_day_sonnet, 7 * 86400),
-    ("7d Opus", None, &usage.seven_day_opus, 7 * 86400),
-  ];
-
-  for (title, short_title, bucket, period_secs) in buckets {
-    if let Some(b) = bucket {
-      windows.push(UsageWindow {
-        title: title.to_string(),
-        short_title: short_title.map(|s| s.to_string()),
-        utilization: b.utilization,
-        resets_at: b.resets_at,
-        period_seconds: Some(*period_secs),
-      });
-    }
-  }
-
-  return UsageData { account_tier, api_usage, windows };
 }
 
 pub struct ClaudeCodeProvider {
@@ -204,7 +204,7 @@ impl ClaudeCodeProvider {
       .ok();
   }
 
-  fn fetch_profile(&self) -> Option<ProfileResponse> {
+  fn fetch_profile_response(&self) -> Option<ProfileResponse> {
     log::debug!("Fetching profile data");
 
     let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
@@ -294,10 +294,11 @@ impl DataProvider for ClaudeCodeProvider {
   }
 
   fn fetch_data(&self) -> Option<UsageData> {
-    let usage = self.fetch_usage()?;
-    let profile = self.fetch_profile();
+    return Some(self.fetch_usage()?.into());
+  }
 
-    return Some(into_usage_data(usage, profile));
+  fn fetch_profile(&self) -> Option<TierInfo> {
+    return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
   }
 
   fn all_tiers(&self) -> Vec<TierInfo> {

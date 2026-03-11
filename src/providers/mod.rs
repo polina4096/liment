@@ -43,9 +43,6 @@ pub struct TierInfo {
 }
 
 pub struct UsageData {
-  /// Account tier label (e.g. "Pro", "Max 5x").
-  pub account_tier: Option<TierInfo>,
-
   /// API/extra usage credit info.
   pub api_usage: Option<ApiUsage>,
 
@@ -84,6 +81,11 @@ pub trait DataProvider: Send + Sync {
 
   /// Fetches usage data for the provider.
   fn fetch_data(&self) -> Option<UsageData>;
+
+  /// Fetches the account tier info. Returns `None` if the provider doesn't support it.
+  fn fetch_profile(&self) -> Option<TierInfo> {
+    return None;
+  }
 
   /// Returns all possible tiers for this provider.
   fn all_tiers(&self) -> Vec<TierInfo>;

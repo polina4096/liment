@@ -7,7 +7,7 @@ use strum::IntoEnumIterator as _;
 use super::CliproxyClient;
 use crate::providers::{
   DataProvider, ProviderKind, TierInfo, UsageData,
-  claude_code::{ProfileResponse, SubscriptionTier, UsageResponse, into_usage_data},
+  claude_code::{ProfileResponse, SubscriptionTier, UsageResponse},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -48,7 +48,7 @@ impl CliproxyClaudeProvider {
       .ok();
   }
 
-  fn fetch_profile(&self) -> Option<ProfileResponse> {
+  fn fetch_profile_response(&self) -> Option<ProfileResponse> {
     log::debug!("Fetching profile data");
 
     let body = self.api_get("https://api.anthropic.com/api/oauth/profile")?;
@@ -75,10 +75,11 @@ impl DataProvider for CliproxyClaudeProvider {
   }
 
   fn fetch_data(&self) -> Option<UsageData> {
-    let usage = self.fetch_usage()?;
-    let profile = self.fetch_profile();
+    return Some(self.fetch_usage()?.into());
+  }
 
-    return Some(into_usage_data(usage, profile));
+  fn fetch_profile(&self) -> Option<TierInfo> {
+    return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
   }
 
   fn all_tiers(&self) -> Vec<TierInfo> {

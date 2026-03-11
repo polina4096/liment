@@ -156,7 +156,7 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
   return container;
 }
 
-pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<TierInfo>) -> Retained<NSView> {
+pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<&TierInfo>) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Title label.

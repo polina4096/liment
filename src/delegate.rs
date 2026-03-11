@@ -1,7 +1,6 @@
 use std::{cell::RefCell, ffi::c_void, sync::Arc};
 
 use block2::RcBlock;
-use strum::IntoEnumIterator as _;
 use dispatch2::{DispatchQueue, MainThreadBound};
 use objc2::{
   AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
@@ -18,12 +17,14 @@ use objc2_foundation::{
   NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
   NSString, NSTimer,
 };
+use strum::IntoEnumIterator as _;
 use tap::Tap;
 
 use crate::{
   CONFIG_PATH, CliArgs,
   config::{Config, DisplayMode},
-  providers::{DataProvider, NullProvider, ProviderKind, UsageData, debug::DebugProvider},
+  profile_cache::ProfileCache,
+  providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, debug::DebugProvider},
   updater::{self, UpdateState, Updater},
   utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
   views,
@@ -32,6 +33,9 @@ use crate::{
 pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
   provider: RefCell<Arc<dyn DataProvider>>,
+
+  /// Cached profile tier info per provider, shared with background threads.
+  profile_cache: Arc<ProfileCache>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
@@ -173,6 +177,7 @@ impl AppDelegate {
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
       provider: RefCell::new(provider),
+      profile_cache: Arc::new(ProfileCache::default()),
       status_item,
       args,
       config: RefCell::new(config),
@@ -260,16 +265,18 @@ impl AppDelegate {
   /// Refetches latest data from the API and updates the UI.
   fn refresh(&self) {
     let provider = Arc::clone(&self.ivars().provider());
+    let profile_cache = Arc::clone(&self.ivars().profile_cache);
     let mtm = self.mtm();
     let this = MainThreadBound::new(self.retain(), mtm);
 
     std::thread::spawn(move || {
       let data = provider.fetch_data();
+      let profile = profile_cache.resolve(&*provider);
 
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread");
 
-        this.get(mtm).rebuild_ui(data);
+        this.get(mtm).rebuild_ui(data.as_ref(), profile.as_ref());
       });
     });
   }
@@ -294,10 +301,16 @@ impl AppDelegate {
 
         if should_auto_install {
           delegate.install_update();
-        } else if reopen_menu && is_available {
-          if let Some(button) = delegate.ivars().status_item.button(mtm) {
-            unsafe { button.performClick(None) };
-          }
+          return;
+        }
+
+        if reopen_menu && is_available {
+          let Some(button) = delegate.ivars().status_item.button(mtm)
+          else {
+            return;
+          };
+
+          unsafe { button.performClick(None) };
         }
       });
     });
@@ -344,7 +357,7 @@ impl AppDelegate {
     }
   }
 
-  fn rebuild_ui(&self, data: Option<UsageData>) {
+  fn rebuild_ui(&self, data: Option<&UsageData>, profile: Option<&TierInfo>) {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
@@ -391,15 +404,8 @@ impl AppDelegate {
 
       let u0 = u0 / 100.0;
       let u1 = u1 / 100.0;
-      let img = Self::build_tray_image(
-        tray_icon_svg,
-        &line1,
-        u0,
-        &line2,
-        u1,
-        config.monochrome_icon,
-        config.stats_colors,
-      );
+      let img =
+        Self::build_tray_image(tray_icon_svg, &line1, u0, &line2, u1, config.monochrome_icon, config.stats_colors);
 
       tray_button.setImage(Some(&img));
     }
@@ -410,7 +416,7 @@ impl AppDelegate {
       });
     });
 
-    views::populate_menu(&menu, mtm, self, &data);
+    views::populate_menu(&menu, mtm, self, data, profile);
   }
 
   /// Builds a two-line attributed string with per-line colors.

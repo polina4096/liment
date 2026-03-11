@@ -1,6 +1,5 @@
 use block2::RcBlock;
-use objc2::rc::Retained;
-use objc2::runtime::Bool;
+use objc2::{rc::Retained, runtime::Bool};
 use objc2_foundation::{NSBundle, NSError, NSString};
 use objc2_user_notifications::{
   UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationRequest, UNUserNotificationCenter,
@@ -20,9 +19,11 @@ pub fn request_authorization() {
     if !error.is_null() {
       let error = unsafe { Retained::retain(error) }.unwrap();
       log::warn!("Notification authorization error: {error}");
-    } else if granted.as_bool() {
+    }
+    else if granted.as_bool() {
       log::info!("Notification authorization granted");
-    } else {
+    }
+    else {
       log::info!("Notification authorization denied");
     }
   });
@@ -46,10 +47,7 @@ pub fn send(title: &str, body: &str) {
 
   let id = NSString::from_str(&format!(
     "liment-{}",
-    std::time::SystemTime::now()
-      .duration_since(std::time::UNIX_EPOCH)
-      .unwrap_or_default()
-      .as_millis()
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()
   ));
 
   let request = UNNotificationRequest::requestWithIdentifier_content_trigger(&id, &content, None);

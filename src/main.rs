@@ -16,6 +16,7 @@ mod components;
 mod config;
 mod constants;
 mod delegate;
+mod profile_cache;
 mod providers;
 mod updater;
 mod utils;
@@ -132,9 +133,7 @@ fn self_sign() -> Result<()> {
 
   log::info!("Relaunching: {exe}");
 
-  Command::new(&*exe)
-    .spawn()
-    .context("Failed to relaunch")?;
+  Command::new(&*exe).spawn().context("Failed to relaunch")?;
 
   return Ok(());
 }

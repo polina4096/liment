@@ -33,9 +33,6 @@ impl DataProvider for DebugProvider {
     // Cycle utilization 0 -> 100 over 10 seconds.
     let utilization = (secs % 10.0) / 10.0 * 100.0;
 
-    // Cycle through tiers, switching every 3 seconds.
-    let tier = &self.tiers[(secs / 3.0) as usize % self.tiers.len()];
-
     let now = Timestamp::now();
     let windows = vec![
       UsageWindow {
@@ -55,12 +52,20 @@ impl DataProvider for DebugProvider {
     ];
 
     return Some(UsageData {
-      account_tier: Some(TierInfo {
-        name: tier.name.clone(),
-        color: tier.color,
-      }),
       api_usage: Some(ApiUsage { usage_usd: 4.20, limit_usd: Some(10.0) }),
       windows,
+    });
+  }
+
+  fn fetch_profile(&self) -> Option<TierInfo> {
+    let secs = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+
+    // Cycle through tiers, switching every 3 seconds.
+    let tier = &self.tiers[(secs / 3.0) as usize % self.tiers.len()];
+
+    return Some(TierInfo {
+      name: tier.name.clone(),
+      color: tier.color,
     });
   }
 

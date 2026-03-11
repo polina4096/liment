@@ -3,11 +3,10 @@ pub mod codex;
 
 use std::collections::HashMap;
 
-use secrecy::{ExposeSecret, SecretString};
-use serde::{Deserialize, Serialize};
-
 pub use claude::{CliproxyClaudeProvider, CliproxyClaudeSettings};
 pub use codex::{CliproxyCodexProvider, CliproxyCodexSettings};
+use secrecy::{ExposeSecret, SecretString};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

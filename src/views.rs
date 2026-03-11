@@ -1,14 +1,13 @@
 use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
 use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
-use tap::Tap as _;
-
 use strum::IntoEnumIterator as _;
+use tap::Tap as _;
 
 use crate::{
   components,
   delegate::AppDelegate,
-  providers::{ProviderKind, UsageData},
+  providers::{ProviderKind, TierInfo, UsageData},
   updater::UpdateState,
 };
 
@@ -31,12 +30,18 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
   });
 }
 
-pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, data: &UsageData) {
+pub fn populate_menu(
+  menu: &NSMenu,
+  mtm: MainThreadMarker,
+  app: &AppDelegate,
+  data: &UsageData,
+  profile: Option<&TierInfo>,
+) {
   menu.removeAllItems();
 
   // Header with tier badge.
   let header_item = NSMenuItem::new(mtm);
-  let header_view = components::header_row(mtm, "Usage", &data.account_tier);
+  let header_view = components::header_row(mtm, "Usage", &profile);
   header_item.setView(Some(&header_view));
   menu.addItem(&header_item);
 

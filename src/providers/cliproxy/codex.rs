@@ -167,9 +167,11 @@ impl DataProvider for CliproxyCodexProvider {
       }
     }
 
-    let account_tier = usage.plan_type.map(|plan| tier_info_for_plan(&plan));
+    return Some(UsageData { api_usage: None, windows });
+  }
 
-    return Some(UsageData { account_tier, api_usage: None, windows });
+  fn fetch_profile(&self) -> Option<TierInfo> {
+    return self.fetch_usage().and_then(|u| u.plan_type.map(|p| tier_info_for_plan(&p)));
   }
 
   fn all_tiers(&self) -> Vec<TierInfo> {
