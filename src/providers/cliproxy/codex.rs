@@ -4,6 +4,7 @@ use anyhow::Result;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator as _;
 
 use super::CliproxyClient;
 use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
@@ -41,9 +42,46 @@ struct AuthIdToken {
   chatgpt_account_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, strum::EnumIter)]
+#[serde(rename_all = "lowercase")]
+enum SubscriptionTier {
+  Free,
+  Plus,
+  Pro,
+  Team,
+  Enterprise,
+}
+
+impl SubscriptionTier {
+  fn tier_info(&self) -> TierInfo {
+    return TierInfo {
+      name: self.to_string(),
+      color: match self {
+        SubscriptionTier::Free => Rgb::new(140, 140, 155),
+        SubscriptionTier::Plus => Rgb::new(90, 145, 210),
+        SubscriptionTier::Pro => Rgb::new(75, 175, 155),
+        SubscriptionTier::Team => Rgb::new(185, 135, 90),
+        SubscriptionTier::Enterprise => Rgb::new(130, 115, 180),
+      },
+    };
+  }
+}
+
+impl std::fmt::Display for SubscriptionTier {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    return match self {
+      SubscriptionTier::Free => write!(f, "Free"),
+      SubscriptionTier::Plus => write!(f, "Plus"),
+      SubscriptionTier::Pro => write!(f, "Pro"),
+      SubscriptionTier::Team => write!(f, "Team"),
+      SubscriptionTier::Enterprise => write!(f, "Enterprise"),
+    };
+  }
+}
+
 #[derive(Debug, Deserialize)]
 struct UsageResponse {
-  plan_type: Option<String>,
+  plan_type: Option<SubscriptionTier>,
   rate_limit: Option<RateLimit>,
   code_review_rate_limit: Option<RateLimit>,
 }
@@ -171,11 +209,11 @@ impl DataProvider for CliproxyCodexProvider {
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    return self.fetch_usage().and_then(|u| u.plan_type.map(|p| tier_info_for_plan(&p)));
+    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
   }
 
   fn all_tiers(&self) -> Vec<TierInfo> {
-    return ["free", "plus", "pro", "team", "enterprise"].iter().map(|plan| tier_info_for_plan(plan)).collect();
+    return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
@@ -183,16 +221,3 @@ impl DataProvider for CliproxyCodexProvider {
   }
 }
 
-fn tier_info_for_plan(plan: &str) -> TierInfo {
-  let normalized = plan.to_ascii_lowercase();
-  let (name, color) = match normalized.as_str() {
-    "free" => ("Free", Rgb::new(140, 140, 155)),
-    "plus" => ("Plus", Rgb::new(90, 145, 210)),
-    "pro" => ("Pro", Rgb::new(75, 175, 155)),
-    "team" => ("Team", Rgb::new(185, 135, 90)),
-    "enterprise" => ("Enterprise", Rgb::new(130, 115, 180)),
-    _ => (plan, Rgb::new(130, 130, 130)),
-  };
-
-  return TierInfo { name: name.to_string(), color };
-}
