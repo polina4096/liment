@@ -43,13 +43,12 @@ struct CliArgs {
 }
 
 static CONFIG_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-  let config_dir = dirs::config_dir()
-    .and_then(|p| Utf8PathBuf::try_from(p).ok())
+  let config_dir = etcetera::base_strategy::Xdg::new()
+    .ok()
+    .and_then(|s| Utf8PathBuf::try_from(etcetera::BaseStrategy::config_dir(&s)).ok())
     .unwrap_or_else(|| Utf8PathBuf::from("~/.config"));
 
-  let config_path = config_dir.join("liment").join("config.toml");
-
-  return config_path;
+  return config_dir.join("liment").join("config.toml");
 });
 
 fn main() -> Result<()> {

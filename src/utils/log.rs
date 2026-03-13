@@ -10,8 +10,9 @@ use crate::constants::{LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS, LIMENT_OVERRIDE_LOG_
 
 pub static LOG_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   return std::env::var(LIMENT_OVERRIDE_LOG_DIR).map(Utf8PathBuf::from).unwrap_or_else(|_| {
-    let data_dir = dirs::data_local_dir()
-      .and_then(|p| Utf8PathBuf::try_from(p).ok())
+    let data_dir = etcetera::base_strategy::Xdg::new()
+      .ok()
+      .and_then(|x| Utf8PathBuf::try_from(etcetera::BaseStrategy::data_dir(&x)).ok())
       .unwrap_or_else(|| Utf8PathBuf::from("~/.local/share"));
 
     return data_dir.join("liment").join("logs");

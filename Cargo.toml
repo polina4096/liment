@@ -52,7 +52,7 @@ objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString"
 objc2-quartz-core = { version = "0.3.2", features = ["objc2-core-graphics", "objc2-core-foundation"] }
 objc2-user-notifications = { version = "0.3.2", features = ["UNNotificationContent", "UNNotificationRequest", "UNNotificationSettings", "UNUserNotificationCenter", "bitflags", "block2"] }
 security-framework = { version = "3.6.0" }
-dirs = { version = "6.0.0" }
+etcetera = { version = "0.10.0" }
 edit = { version = "0.1.5" }
 fs-err = { version = "3.3.0" }
 camino = { version = "1.2.2" }
