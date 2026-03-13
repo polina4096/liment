@@ -5,9 +5,9 @@ use strum::IntoEnumIterator as _;
 use tap::Tap as _;
 
 use crate::{
-  components,
   delegate::AppDelegate,
   providers::{ProviderKind, TierInfo, UsageData},
+  ui::components,
   updater::UpdateState,
 };
 

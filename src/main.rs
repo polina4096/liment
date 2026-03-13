@@ -12,15 +12,14 @@ use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
 use crate::{config::Config, delegate::AppDelegate, watcher::watch_config};
 
-mod components;
 mod config;
 mod constants;
 mod delegate;
 mod profile_cache;
 mod providers;
+mod ui;
 mod updater;
 mod utils;
-mod views;
 mod watcher;
 
 #[derive(Parser)]

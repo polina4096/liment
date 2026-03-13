@@ -25,9 +25,9 @@ use crate::{
   config::{Config, DisplayMode},
   profile_cache::ProfileCache,
   providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, debug::DebugProvider},
+  ui::views,
   updater::{self, UpdateState, Updater},
   utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
-  views,
 };
 
 pub struct AppDelegateIvars {
