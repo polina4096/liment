@@ -1,10 +1,10 @@
-use std::sync::LazyLock;
+use std::{fs::File, sync::LazyLock};
 
 use camino::Utf8PathBuf;
-use color_eyre::eyre::Context as _;
+use color_eyre::{Result, eyre::Context as _};
 use jiff::{Zoned, fmt::strtime};
 use log::LevelFilter;
-use simplelog::{ColorChoice, CombinedLogger, SharedLogger, TermLogger, TerminalMode, WriteLogger};
+use tap::Pipe as _;
 
 use crate::constants::{LIMENT_NO_DISK_LOGS, LIMENT_NO_LOGS, LIMENT_OVERRIDE_LOG_DIR};
 
@@ -19,24 +19,21 @@ pub static LOG_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   });
 });
 
-fn term_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) {
-  loggers.push(TermLogger::new(LevelFilter::Debug, config, TerminalMode::Mixed, ColorChoice::Auto));
-}
-
-fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) -> color_eyre::eyre::Result<()> {
-  if std::env::var(LIMENT_NO_DISK_LOGS).is_err() {
-    let log_dir = &*LOG_DIR;
-
-    if !fs_err::exists(log_dir).unwrap_or(false) {
-      fs_err::create_dir_all(log_dir).context("Failed to create log directory")?;
-    }
-
-    let now = strtime::format("%Y_%m_%dT%H_%M_%S", &Zoned::now()).context("Failed to format time")?;
-    let file = fs_err::File::create(log_dir.join(now).with_extension("log")).context("Failed to create a log file")?;
-    loggers.push(WriteLogger::new(LevelFilter::Debug, config, file));
+fn open_log_file() -> Result<Option<File>> {
+  if std::env::var(LIMENT_NO_DISK_LOGS).is_ok() {
+    return Ok(None);
   }
 
-  return Ok(());
+  let log_dir = &*LOG_DIR;
+
+  if !fs_err::exists(log_dir).unwrap_or(false) {
+    fs_err::create_dir_all(log_dir).context("Failed to create log directory")?;
+  }
+
+  let now = strtime::format("%Y_%m_%dT%H_%M_%S", &Zoned::now()).context("Failed to format time")?;
+  let file = fs_err::File::create(log_dir.join(now).with_extension("log")).context("Failed to create a log file")?;
+
+  return Ok(Some(file.into_parts().0));
 }
 
 pub fn init_logger() {
@@ -44,24 +41,27 @@ pub fn init_logger() {
     return;
   }
 
-  let config = simplelog::ConfigBuilder::new() //
-    .add_filter_allow_str(env!("CARGO_PKG_NAME"))
-    .build();
-
-  let mut errors = Vec::new();
-  let mut loggers = Vec::new();
-  term_logger(config.clone(), &mut loggers);
-  disk_logger(config.clone(), &mut loggers).unwrap_or_else(|e| errors.push(("Failed to initialize disk logger: ", e)));
-
-  match CombinedLogger::init(loggers) {
-    Ok(()) => {
-      for (msg, err) in errors {
-        log::error!("{}: {}", msg, err);
+  let pkg = env!("CARGO_PKG_NAME");
+  let result = fern::Dispatch::new()
+    .filter(move |metadata| metadata.target().starts_with(pkg))
+    .format(|out, message, record| {
+      out.finish(format_args!("[{}][{}] {}", record.level(), record.target(), message));
+    })
+    .level(LevelFilter::Debug)
+    .chain(std::io::stderr())
+    .pipe(|d| {
+      match open_log_file() {
+        Ok(Some(file)) => d.chain(file),
+        Ok(None) => d,
+        Err(e) => {
+          eprintln!("Failed to initialize disk logger: {e}");
+          d
+        }
       }
-    }
+    })
+    .apply();
 
-    Err(e) => {
-      println!("Failed to initialize logger: {}", e);
-    }
+  if let Err(e) = result {
+    eprintln!("Failed to initialize logger: {e}");
   }
 }
