@@ -18,8 +18,11 @@ fn is_content_change(kind: &notify::EventKind) -> bool {
   );
 }
 
-pub fn watch_config(delegate: &Retained<AppDelegate>, mtm: MainThreadMarker) -> anyhow::Result<RecommendedWatcher> {
-  use anyhow::Context as _;
+pub fn watch_config(
+  delegate: &Retained<AppDelegate>,
+  mtm: MainThreadMarker,
+) -> color_eyre::eyre::Result<RecommendedWatcher> {
+  use color_eyre::eyre::Context as _;
 
   let delegate = Arc::new(MainThreadBound::new(delegate.clone(), mtm));
 
@@ -35,7 +38,7 @@ pub fn watch_config(delegate: &Retained<AppDelegate>, mtm: MainThreadMarker) -> 
     let mut last_reload = Instant::now();
 
     for event in rx {
-      let result: anyhow::Result<()> = (|| {
+      let result: color_eyre::eyre::Result<()> = (|| {
         let event = event?;
 
         // Only react to content modifications and renames (atomic saves).

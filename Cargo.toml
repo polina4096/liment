@@ -38,7 +38,7 @@ overflow-checks = false
 log = { version = "0.4.29" }
 simplelog = { version = "0.12.2" }
 tap = { version = "1.0.1" }
-anyhow = { version = "1.0.101" }
+color-eyre = { version = "0.6.4" }
 strum = { version = "0.27.2", features = ["derive"] }
 clap = { version = "4.5.58", features = ["derive"] }
 figment2 = { version = "0.11.4", features = ["toml", "env"] }

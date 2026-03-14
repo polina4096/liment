@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
@@ -220,4 +220,3 @@ impl DataProvider for CliproxyCodexProvider {
     return include_bytes!("../../../resources/codex.svg");
   }
 }
-

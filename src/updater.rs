@@ -1,7 +1,7 @@
 use std::{cell::RefCell, process::Command};
 
-use anyhow::Context as _;
 use camino::{Utf8Path, Utf8PathBuf};
+use color_eyre::eyre::{Context as _, ContextCompat as _};
 use dispatch2::DispatchQueue;
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSApplication;
@@ -71,7 +71,7 @@ pub fn check_for_update() -> UpdateState {
 
 /// Downloads and installs the update, then relaunches.
 /// Performs blocking I/O — call from a background thread.
-pub fn download_and_install(url: &str) -> anyhow::Result<()> {
+pub fn download_and_install(url: &str) -> color_eyre::eyre::Result<()> {
   let new_app = download_and_extract(url)?;
 
   return install_and_relaunch(&new_app);
@@ -97,7 +97,7 @@ struct GitHubAsset {
 }
 
 /// Fetches the latest release from GitHub.
-fn fetch_latest_release() -> anyhow::Result<VersionInfo> {
+fn fetch_latest_release() -> color_eyre::eyre::Result<VersionInfo> {
   log::debug!("Checking for updates...");
 
   let mut response = ureq::get(GITHUB_RELEASES_URL)
@@ -129,7 +129,7 @@ fn fetch_latest_release() -> anyhow::Result<VersionInfo> {
 }
 
 /// Downloads and extracts the update zip from the given URL.
-fn download_and_extract(url: &str) -> anyhow::Result<Utf8PathBuf> {
+fn download_and_extract(url: &str) -> color_eyre::eyre::Result<Utf8PathBuf> {
   let tmp = tempfile::tempdir().context("Failed to create temp directory")?;
   let update_dir = Utf8PathBuf::try_from(tmp.keep()).context("Temp dir is not valid UTF-8")?;
   let zip_path = update_dir.join(ASSET_NAME);
@@ -155,7 +155,7 @@ fn download_and_extract(url: &str) -> anyhow::Result<Utf8PathBuf> {
 
   if !status.status.success() {
     let e = String::from_utf8_lossy(&status.stderr);
-    anyhow::bail!("unzip failed: {e}");
+    color_eyre::eyre::bail!("unzip failed: {e}");
   }
 
   // Verify the extracted app bundle contains the binary.
@@ -163,14 +163,14 @@ fn download_and_extract(url: &str) -> anyhow::Result<Utf8PathBuf> {
   let binary = new_app.join("Contents/MacOS/liment");
 
   if !binary.exists() {
-    anyhow::bail!("Extracted app bundle is missing the binary at {binary}");
+    color_eyre::eyre::bail!("Extracted app bundle is missing the binary at {binary}");
   }
 
   return Ok(new_app);
 }
 
 /// Returns the path to the app bundle.
-fn app_bundle_path() -> anyhow::Result<Utf8PathBuf> {
+fn app_bundle_path() -> color_eyre::eyre::Result<Utf8PathBuf> {
   let exe = Utf8PathBuf::try_from(std::env::current_exe().context("Failed to get current exe path")?)
     .context("Executable path is not valid UTF-8")?;
 
@@ -182,14 +182,14 @@ fn app_bundle_path() -> anyhow::Result<Utf8PathBuf> {
     .context("Cannot determine .app bundle path")?;
 
   if !app_path.as_str().ends_with(".app") {
-    anyhow::bail!("Not running from a .app bundle (path: {app_path})");
+    color_eyre::eyre::bail!("Not running from a .app bundle (path: {app_path})");
   }
 
   return Ok(app_path.to_owned());
 }
 
 /// Installs the new app and relaunches the current process.
-fn install_and_relaunch(new_app: &Utf8Path) -> anyhow::Result<()> {
+fn install_and_relaunch(new_app: &Utf8Path) -> color_eyre::eyre::Result<()> {
   let current_app = app_bundle_path()?;
   let backup_app = Utf8PathBuf::from(format!("{current_app}.old"));
 

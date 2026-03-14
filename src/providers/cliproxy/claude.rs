@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator as _;
 

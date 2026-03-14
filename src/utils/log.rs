@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
-use anyhow::Context as _;
 use camino::Utf8PathBuf;
+use color_eyre::eyre::Context as _;
 use jiff::{Zoned, fmt::strtime};
 use log::LevelFilter;
 use simplelog::{ColorChoice, CombinedLogger, SharedLogger, TermLogger, TerminalMode, WriteLogger};
@@ -23,7 +23,7 @@ fn term_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger
   loggers.push(TermLogger::new(LevelFilter::Debug, config, TerminalMode::Mixed, ColorChoice::Auto));
 }
 
-fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) -> anyhow::Result<()> {
+fn disk_logger(config: simplelog::Config, loggers: &mut Vec<Box<dyn SharedLogger>>) -> color_eyre::eyre::Result<()> {
   if std::env::var(LIMENT_NO_DISK_LOGS).is_err() {
     let log_dir = &*LOG_DIR;
 

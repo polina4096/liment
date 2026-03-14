@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Context as _;
+use color_eyre::eyre::ContextCompat as _;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
@@ -116,7 +116,7 @@ impl DataProvider for NullProvider {
 }
 
 impl ProviderKind {
-  pub fn into_provider(self, settings: &ProviderSettings) -> anyhow::Result<Arc<dyn DataProvider>> {
+  pub fn into_provider(self, settings: &ProviderSettings) -> color_eyre::eyre::Result<Arc<dyn DataProvider>> {
     match self {
       ProviderKind::ClaudeCode => {
         let settings = settings.claude_code.clone().unwrap_or_default();

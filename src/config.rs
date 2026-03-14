@@ -1,4 +1,4 @@
-use anyhow::Context as _;
+use color_eyre::eyre::ContextCompat as _;
 use documented::DocumentedFields;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
@@ -68,7 +68,7 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn default_toml() -> anyhow::Result<String> {
+  pub fn default_toml() -> color_eyre::eyre::Result<String> {
     let toml_str = toml_edit::ser::to_string_pretty(&Self::default())?;
     let mut doc: DocumentMut = toml_str.parse()?;
 
@@ -88,7 +88,7 @@ impl Config {
     return Ok(doc.to_string());
   }
 
-  pub fn ensure_exists() -> anyhow::Result<()> {
+  pub fn ensure_exists() -> color_eyre::eyre::Result<()> {
     let config_path = &*CONFIG_PATH;
 
     if !config_path.exists() {

@@ -1,8 +1,8 @@
 use std::{process::Command, sync::LazyLock};
 
-use anyhow::{Context as _, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
+use color_eyre::eyre::{Context as _, ContextCompat as _, Result};
 use figment2::{
   Figment,
   providers::{Env, Format as _, Toml},
@@ -53,6 +53,7 @@ static CONFIG_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 
 fn main() -> Result<()> {
   utils::log::init_logger();
+  color_eyre::install()?;
 
   Config::ensure_exists()?;
 
@@ -126,7 +127,7 @@ fn self_sign() -> Result<()> {
     .context("Failed to run codesign")?;
 
   if !status.success() {
-    anyhow::bail!("codesign exited with {status}");
+    color_eyre::eyre::bail!("codesign exited with {status}");
   }
 
   log::info!("Relaunching: {exe}");

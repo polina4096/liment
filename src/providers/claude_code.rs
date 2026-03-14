@@ -1,6 +1,6 @@
 use std::{sync::Mutex, time::Instant};
 
-use anyhow::{Context as _, Result};
+use color_eyre::eyre::{ContextCompat as _, Result};
 use jiff::Timestamp;
 use rgb::Rgb;
 use secrecy::{ExposeSecret, SecretString};
