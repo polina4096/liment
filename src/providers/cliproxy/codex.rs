@@ -185,7 +185,7 @@ impl DataProvider for CliproxyCodexProvider {
     if let Some(code_review) = &usage.code_review_rate_limit {
       if let Some(primary) = &code_review.primary_window {
         windows.push(UsageWindow {
-          title: "Code Review 7d".to_string(),
+          title: "Review 7d".to_string(),
           short_title: None,
           utilization: primary.used_percent,
           resets_at: Timestamp::from_second(primary.reset_at).ok(),
@@ -195,7 +195,7 @@ impl DataProvider for CliproxyCodexProvider {
 
       if let Some(secondary) = &code_review.secondary_window {
         windows.push(UsageWindow {
-          title: "Code Review Secondary".to_string(),
+          title: "Review 2".to_string(),
           short_title: None,
           utilization: secondary.used_percent,
           resets_at: Timestamp::from_second(secondary.reset_at).ok(),
