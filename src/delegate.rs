@@ -21,8 +21,9 @@ use strum::IntoEnumIterator as _;
 use tap::Tap;
 
 use crate::{
-  CONFIG_PATH, CliArgs,
+  CONFIG_PATH,
   config::{Config, DisplayMode},
+  constants::LIMENT_DEBUG_REFETCH_INTERVAL,
   profile_cache::ProfileCache,
   providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, debug::DebugProvider},
   ui::views,
@@ -39,9 +40,6 @@ pub struct AppDelegateIvars {
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
-
-  /// Run-time options from the command line arguments.
-  args: CliArgs,
 
   /// Hot-reloadable configuration.
   config: RefCell<Config>,
@@ -156,10 +154,10 @@ define_class!(
         self.attempt_update(false);
       }
 
-      let refetch_interval = match self.ivars().args.debug_values {
-        true => 0.1,
-        false => self.ivars().config().refetch_interval as f64,
-      };
+      let refetch_interval = std::env::var(LIMENT_DEBUG_REFETCH_INTERVAL)
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(self.ivars().config().refetch_interval as f64);
 
       // Refresh UI periodically.
       schedule_timer!(refetch_interval, self, onTimer);
@@ -168,18 +166,17 @@ define_class!(
 );
 
 impl AppDelegate {
-  pub fn new(mtm: MainThreadMarker, args: CliArgs, config: Config) -> Retained<Self> {
+  pub fn new(mtm: MainThreadMarker, config: Config) -> Retained<Self> {
     let status_bar = NSStatusBar::systemStatusBar();
     let status_item = status_bar.statusItemWithLength(NSVariableStatusItemLength);
 
-    let provider = Self::provider_from_config(&config, args.debug_values);
+    let provider = Self::provider_from_config(&config);
 
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
       provider: RefCell::new(provider),
       profile_cache: Arc::new(ProfileCache::default()),
       status_item,
-      args,
       config: RefCell::new(config),
       updater: Updater::new(),
     });
@@ -230,7 +227,7 @@ impl AppDelegate {
       return;
     }
 
-    let provider = Self::provider_from_config(&new_config, self.ivars().args.debug_values);
+    let provider = Self::provider_from_config(&new_config);
     *self.ivars().provider.borrow_mut() = provider;
     *self.ivars().config.borrow_mut() = new_config;
 
@@ -245,7 +242,7 @@ impl AppDelegate {
     self.refresh();
   }
 
-  fn provider_from_config(config: &Config, debug_values: bool) -> Arc<dyn DataProvider> {
+  fn provider_from_config(config: &Config) -> Arc<dyn DataProvider> {
     let provider = match config.provider.into_provider(&config.settings) {
       Ok(provider) => provider,
       Err(e) => {
@@ -256,10 +253,10 @@ impl AppDelegate {
       }
     };
 
-    return match debug_values {
-      true => Arc::new(DebugProvider::new(&*provider)),
-      false => provider,
-    };
+    match DebugProvider::try_wrap(provider.clone()) {
+      Some(debug) => Arc::new(debug),
+      None => provider,
+    }
   }
 
   /// Refetches latest data from the API and updates the UI.

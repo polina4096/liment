@@ -1,79 +1,123 @@
-use std::time::SystemTime;
+use std::sync::Arc;
 
 use jiff::Timestamp;
+use rgb::Rgb;
 
-use crate::providers::{ApiUsage, DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
+use crate::{
+  constants::*,
+  providers::{ApiUsage, DataProvider, ProviderKind, TierInfo, UsageData},
+};
 
-/// Wraps another provider and overrides its data with cycling debug values.
+/// Wraps another provider and overrides its data with values from environment variables.
 pub struct DebugProvider {
-  kind: ProviderKind,
-  tiers: Vec<TierInfo>,
-  tray_icon_svg: &'static [u8],
+  inner: Arc<dyn DataProvider>,
+  tier: Option<TierInfo>,
+  utilization: Option<f64>,
+  resets_in: Option<i64>,
+  extra_usage: Option<ApiUsage>,
 }
 
 impl DebugProvider {
-  pub fn new(inner: &dyn DataProvider) -> Self {
-    let tiers = inner.all_tiers();
-    return Self {
-      kind: inner.kind(),
-      tiers,
-      tray_icon_svg: inner.tray_icon_svg(),
-    };
+  /// Returns `Some(DebugProvider)` if any `LIMENT_DEBUG_` env vars are set, otherwise `None`.
+  pub fn try_wrap(inner: Arc<dyn DataProvider>) -> Option<Self> {
+    let utilization = std::env::var(LIMENT_DEBUG_UTILIZATION).ok().and_then(|v| v.parse().ok());
+    let resets_in = std::env::var(LIMENT_DEBUG_RESETS_IN).ok().and_then(|v| v.parse().ok());
+    let tier = std::env::var(LIMENT_DEBUG_TIER).ok().and_then(|v| parse_tier(&v));
+    let extra_usage = std::env::var(LIMENT_DEBUG_EXTRA_USAGE).ok().and_then(|v| parse_extra_usage(&v));
+
+    if utilization.is_none() && resets_in.is_none() && tier.is_none() && extra_usage.is_none() {
+      return None;
+    }
+
+    log::info!(
+      "Debug overrides active: utilization={utilization:?}, resets_in={resets_in:?}, \
+       tier={}, extra_usage={}",
+      tier.is_some(),
+      extra_usage.is_some(),
+    );
+
+    return Some(Self {
+      inner,
+      utilization,
+      resets_in,
+      tier,
+      extra_usage,
+    });
   }
+}
+
+/// Parses "name:r,g,b" into a TierInfo.
+fn parse_tier(s: &str) -> Option<TierInfo> {
+  let (name, rgb) = s.split_once(':')?;
+  let mut parts = rgb.split(',');
+  let r = parts.next()?.trim().parse().ok()?;
+  let g = parts.next()?.trim().parse().ok()?;
+  let b = parts.next()?.trim().parse().ok()?;
+
+  return Some(TierInfo {
+    name: name.to_string(),
+    color: Rgb::new(r, g, b),
+  });
+}
+
+/// Parses "used:limit" or "used" into an ApiUsage.
+fn parse_extra_usage(s: &str) -> Option<ApiUsage> {
+  return match s.split_once(':') {
+    Some((used, limit)) => {
+      Some(ApiUsage {
+        usage_usd: used.trim().parse().ok()?,
+        limit_usd: Some(limit.trim().parse().ok()?),
+      })
+    }
+    None => {
+      Some(ApiUsage {
+        usage_usd: s.trim().parse().ok()?,
+        limit_usd: None,
+      })
+    }
+  };
 }
 
 impl DataProvider for DebugProvider {
   fn kind(&self) -> ProviderKind {
-    return self.kind;
+    return self.inner.kind();
   }
 
   fn fetch_data(&self) -> Option<UsageData> {
-    let secs = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+    let mut data = self.inner.fetch_data()?;
 
-    // Cycle utilization 0 -> 100 over 10 seconds.
-    let utilization = (secs % 10.0) / 10.0 * 100.0;
+    for window in &mut data.windows {
+      if let Some(utilization) = self.utilization {
+        window.utilization = utilization;
+      }
 
-    let now = Timestamp::now();
-    let windows = vec![
-      UsageWindow {
-        title: "5h Limit".into(),
-        short_title: Some("5h".into()),
-        utilization,
-        resets_at: Some(now),
-        period_seconds: Some(5 * 3600),
-      },
-      UsageWindow {
-        title: "7d Limit".into(),
-        short_title: Some("7d".into()),
-        utilization,
-        resets_at: Some(now),
-        period_seconds: Some(7 * 86400),
-      },
-    ];
+      if let Some(resets_in) = self.resets_in {
+        window.resets_at = Some(Timestamp::now().checked_add(jiff::SignedDuration::from_secs(resets_in)).unwrap());
+      }
+    }
 
-    return Some(UsageData {
-      api_usage: Some(ApiUsage { usage_usd: 4.20, limit_usd: Some(10.0) }),
-      windows,
-    });
+    if let Some(ref extra_usage) = self.extra_usage {
+      data.api_usage = Some(ApiUsage {
+        usage_usd: extra_usage.usage_usd,
+        limit_usd: extra_usage.limit_usd,
+      });
+    }
+
+    return Some(data);
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    let secs = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+    if let Some(ref tier) = self.tier {
+      return Some(TierInfo {
+        name: tier.name.clone(),
+        color: tier.color,
+      });
+    }
 
-    // Cycle through tiers, switching every 3 seconds.
-    let tier = &self.tiers[(secs / 3.0) as usize % self.tiers.len()];
-
-    return Some(TierInfo {
-      name: tier.name.clone(),
-      color: tier.color,
-    });
-  }
-
-  fn all_tiers(&self) -> Vec<TierInfo> {
-    return self.tiers.iter().map(|t| TierInfo { name: t.name.clone(), color: t.color }).collect();
+    return self.inner.fetch_profile();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
-    return self.tray_icon_svg;
+    return self.inner.tray_icon_svg();
   }
 }

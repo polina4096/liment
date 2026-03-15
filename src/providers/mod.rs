@@ -87,9 +87,6 @@ pub trait DataProvider: Send + Sync {
     return None;
   }
 
-  /// Returns all possible tiers for this provider.
-  fn all_tiers(&self) -> Vec<TierInfo>;
-
   /// Returns SVG bytes for tray icon.
   fn tray_icon_svg(&self) -> &'static [u8];
 }
@@ -104,10 +101,6 @@ impl DataProvider for NullProvider {
 
   fn fetch_data(&self) -> Option<UsageData> {
     return None;
-  }
-
-  fn all_tiers(&self) -> Vec<TierInfo> {
-    return vec![];
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

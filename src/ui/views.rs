@@ -51,14 +51,16 @@ pub fn populate_menu(
   for window in &data.windows {
     menu.addItem(&components::bucket_row(
       mtm,
-      &window.title,
-      window.utilization,
-      window.resets_at.as_ref(),
-      window.period_seconds,
-      config.show_period_percentage,
-      config.show_pacing_warning,
-      config.reset_time_format,
-      config.display_mode,
+      &components::BucketRowParams {
+        label: &window.title,
+        utilization: window.utilization,
+        resets_at: window.resets_at.as_ref(),
+        period_seconds: window.period_seconds,
+        show_period_percentage: config.show_period_percentage,
+        show_pacing_warning: config.show_pacing_warning,
+        reset_time_format: config.reset_time_format,
+        display_mode: config.display_mode,
+      },
     ));
   }
 

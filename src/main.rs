@@ -25,10 +25,6 @@ mod watcher;
 #[derive(Parser)]
 #[command()]
 struct CliArgs {
-  /// Cycle tray values from 0% to 100% and switch between tiers.
-  #[arg(long)]
-  debug_values: bool,
-
   /// Open the configuration file in the default text editor.
   #[arg(long)]
   open_config: bool,
@@ -92,7 +88,7 @@ fn main() -> Result<()> {
 
   log::info!("Selected provider: {:?}", config.provider);
 
-  let delegate = AppDelegate::new(mtm, args, config);
+  let delegate = AppDelegate::new(mtm, config);
 
   // Watch config file for changes.
   let watcher = watch_config(&delegate, mtm).inspect_err(|e| log::warn!("{e:#}")).ok();

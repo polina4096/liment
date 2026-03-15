@@ -46,5 +46,11 @@ EOF
 # Ad-hoc codesign
 codesign --force --sign - "$APP"
 
-# Run
-open "$APP"
+# Run directly so environment variables propagate.
+# Debug overrides (set before running this script):
+#   LIMENT_DEBUG_UTILIZATION=80          - override utilization % for all windows
+#   LIMENT_DEBUG_RESETS_IN=3600          - override reset time (seconds from now)
+#   LIMENT_DEBUG_REFETCH_INTERVAL=5      - override refetch interval (seconds)
+#   LIMENT_DEBUG_TIER="Pro:90,145,210"   - override tier badge (name:r,g,b)
+#   LIMENT_DEBUG_EXTRA_USAGE="4.20:10"   - override extra usage (used:limit or used)
+exec "$APP/Contents/MacOS/liment"

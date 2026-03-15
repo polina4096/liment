@@ -6,7 +6,7 @@ use rgb::Rgb;
 use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
-use strum::IntoEnumIterator as _;
+
 
 use super::{DataProvider, ProviderKind, UsageData};
 use crate::providers::{ApiUsage, TierInfo, UsageWindow};
@@ -299,10 +299,6 @@ impl DataProvider for ClaudeCodeProvider {
 
   fn fetch_profile(&self) -> Option<TierInfo> {
     return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
-  }
-
-  fn all_tiers(&self) -> Vec<TierInfo> {
-    return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

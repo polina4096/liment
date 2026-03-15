@@ -2,12 +2,10 @@ use std::collections::HashMap;
 
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
-use strum::IntoEnumIterator as _;
-
 use super::CliproxyClient;
 use crate::providers::{
   DataProvider, ProviderKind, TierInfo, UsageData,
-  claude_code::{ProfileResponse, SubscriptionTier, UsageResponse},
+  claude_code::{ProfileResponse, UsageResponse},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -80,10 +78,6 @@ impl DataProvider for CliproxyClaudeProvider {
 
   fn fetch_profile(&self) -> Option<TierInfo> {
     return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
-  }
-
-  fn all_tiers(&self) -> Vec<TierInfo> {
-    return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

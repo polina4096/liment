@@ -4,8 +4,6 @@ use color_eyre::eyre::Result;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
-use strum::IntoEnumIterator as _;
-
 use super::CliproxyClient;
 use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
 
@@ -210,10 +208,6 @@ impl DataProvider for CliproxyCodexProvider {
 
   fn fetch_profile(&self) -> Option<TierInfo> {
     return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
-  }
-
-  fn all_tiers(&self) -> Vec<TierInfo> {
-    return SubscriptionTier::iter().map(|t| t.tier_info()).collect();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

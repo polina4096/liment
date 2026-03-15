@@ -46,26 +46,27 @@ fn layout(container: &NSView) {
   container.setFrameSize(container.fittingSize());
 }
 
-pub fn bucket_row(
-  mtm: MainThreadMarker,
-  label: &str,
-  utilization: f64,
-  resets_at: Option<&Timestamp>,
-  period_seconds: Option<i64>,
-  show_period_percentage: bool,
-  show_pacing_warning: bool,
-  reset_time_format: DateTimeFormat,
-  display_format: DisplayMode,
-) -> Retained<NSMenuItem> {
-  let reset_str = resets_at.map(|resets_at| {
-    let mut reset_str = match reset_time_format {
+pub struct BucketRowParams<'a> {
+  pub label: &'a str,
+  pub utilization: f64,
+  pub resets_at: Option<&'a Timestamp>,
+  pub period_seconds: Option<i64>,
+  pub show_period_percentage: bool,
+  pub show_pacing_warning: bool,
+  pub reset_time_format: DateTimeFormat,
+  pub display_mode: DisplayMode,
+}
+
+pub fn bucket_row(mtm: MainThreadMarker, params: &BucketRowParams) -> Retained<NSMenuItem> {
+  let reset_str = params.resets_at.map(|resets_at| {
+    let mut reset_str = match params.reset_time_format {
       DateTimeFormat::Absolute => format!("reset: {}", format_absolute_time(resets_at)),
       DateTimeFormat::Relative => format!("resets in {}", format_reset_time(resets_at)),
     };
 
     // Render period percentage and pacing warning.
-    if show_period_percentage || show_pacing_warning {
-      let Some(period) = period_seconds
+    if params.show_period_percentage || params.show_pacing_warning {
+      let Some(period) = params.period_seconds
       else {
         return reset_str;
       };
@@ -80,8 +81,8 @@ pub fn bucket_row(
       let elapsed_pct = passed as f64 / period as f64 * 100.0;
       let elapsed_pct = elapsed_pct.clamp(0.0, 100.0);
 
-      if show_period_percentage {
-        let display_pct = match display_format {
+      if params.show_period_percentage {
+        let display_pct = match params.display_mode {
           DisplayMode::Remaining => 100.0 - elapsed_pct,
           DisplayMode::Usage => elapsed_pct,
         };
@@ -91,7 +92,7 @@ pub fn bucket_row(
       }
 
       // Append pacing warning to the reset string.
-      if show_pacing_warning && utilization > elapsed_pct {
+      if params.show_pacing_warning && params.utilization > elapsed_pct {
         reset_str = format!("{} ⚠", reset_str);
       }
     }
@@ -99,8 +100,8 @@ pub fn bucket_row(
     return reset_str;
   });
 
-  let utilization = if display_format == DisplayMode::Remaining { 100.0 - utilization } else { utilization };
-  let view = progress_row(mtm, label, utilization, reset_str.as_deref());
+  let utilization = if params.display_mode == DisplayMode::Remaining { 100.0 - params.utilization } else { params.utilization };
+  let view = progress_row(mtm, params.label, utilization, reset_str.as_deref());
   let item = NSMenuItem::new(mtm);
   item.setView(Some(&view));
 
