@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};
+
 use super::CliproxyClient;
 use crate::providers::{
   DataProvider, ProviderKind, TierInfo, UsageData,

@@ -58,6 +58,8 @@ pub struct BucketRowParams<'a> {
 }
 
 pub fn bucket_row(mtm: MainThreadMarker, params: &BucketRowParams) -> Retained<NSMenuItem> {
+  let mut pacing_warning = false;
+
   let reset_str = params.resets_at.map(|resets_at| {
     let mut reset_str = match params.reset_time_format {
       DateTimeFormat::Absolute => format!("reset: {}", format_absolute_time(resets_at)),
@@ -94,21 +96,34 @@ pub fn bucket_row(mtm: MainThreadMarker, params: &BucketRowParams) -> Retained<N
       // Append pacing warning to the reset string.
       if params.show_pacing_warning && params.utilization > elapsed_pct {
         reset_str = format!("{} ⚠", reset_str);
+        pacing_warning = true;
       }
     }
 
     return reset_str;
   });
 
-  let utilization = if params.display_mode == DisplayMode::Remaining { 100.0 - params.utilization } else { params.utilization };
-  let view = progress_row(mtm, params.label, utilization, reset_str.as_deref());
+  let utilization = if params.display_mode == DisplayMode::Remaining {
+    100.0 - params.utilization
+  }
+  else {
+    params.utilization
+  };
+  let reset_color = if pacing_warning { Some(NSColor::systemYellowColor()) } else { None };
+  let view = progress_row(mtm, params.label, utilization, reset_str.as_deref(), reset_color.as_deref());
   let item = NSMenuItem::new(mtm);
   item.setView(Some(&view));
 
   return item;
 }
 
-pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_str: Option<&str>) -> Retained<NSView> {
+pub fn progress_row(
+  mtm: MainThreadMarker,
+  label: &str,
+  utilization: f64,
+  reset_str: Option<&str>,
+  reset_color: Option<&NSColor>,
+) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Label: "5h Limit  8%".
@@ -134,7 +149,9 @@ pub fn progress_row(mtm: MainThreadMarker, label: &str, utilization: f64, reset_
     let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
     reset_field.setFont(Some(&small_font));
     reset_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
-    reset_field.setTextColor(Some(&NSColor::secondaryLabelColor()));
+    let default_color = NSColor::secondaryLabelColor();
+    let color = reset_color.unwrap_or(&default_color);
+    reset_field.setTextColor(Some(color));
     container.addSubview(&reset_field);
 
     activate(&[

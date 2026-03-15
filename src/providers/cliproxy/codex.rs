@@ -4,6 +4,7 @@ use color_eyre::eyre::Result;
 use jiff::Timestamp;
 use rgb::Rgb;
 use serde::{Deserialize, Serialize};
+
 use super::CliproxyClient;
 use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
 

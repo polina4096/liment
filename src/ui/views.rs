@@ -49,19 +49,16 @@ pub fn populate_menu(
   let config = app.ivars().config();
 
   for window in &data.windows {
-    menu.addItem(&components::bucket_row(
-      mtm,
-      &components::BucketRowParams {
-        label: &window.title,
-        utilization: window.utilization,
-        resets_at: window.resets_at.as_ref(),
-        period_seconds: window.period_seconds,
-        show_period_percentage: config.show_period_percentage,
-        show_pacing_warning: config.show_pacing_warning,
-        reset_time_format: config.reset_time_format,
-        display_mode: config.display_mode,
-      },
-    ));
+    menu.addItem(&components::bucket_row(mtm, &components::BucketRowParams {
+      label: &window.title,
+      utilization: window.utilization,
+      resets_at: window.resets_at.as_ref(),
+      period_seconds: window.period_seconds,
+      show_period_percentage: config.show_period_percentage,
+      show_pacing_warning: config.show_pacing_warning,
+      reset_time_format: config.reset_time_format,
+      display_mode: config.display_mode,
+    }));
   }
 
   // API / extra usage.

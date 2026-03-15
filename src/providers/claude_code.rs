@@ -7,7 +7,6 @@ use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 
-
 use super::{DataProvider, ProviderKind, UsageData};
 use crate::providers::{ApiUsage, TierInfo, UsageWindow};
 
