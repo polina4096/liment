@@ -52,6 +52,8 @@ pub fn bucket_row(
   utilization: f64,
   resets_at: Option<&Timestamp>,
   period_seconds: Option<i64>,
+  show_period_percentage: bool,
+  show_pacing_warning: bool,
   reset_time_format: DateTimeFormat,
   display_format: DisplayMode,
 ) -> Retained<NSMenuItem> {
@@ -61,17 +63,36 @@ pub fn bucket_row(
       DateTimeFormat::Relative => format!("resets in {}", format_reset_time(resets_at)),
     };
 
-    if let Some(period) = period_seconds {
+    // Render period percentage and pacing warning.
+    if show_period_percentage || show_pacing_warning {
+      let Some(period) = period_seconds
+      else {
+        return reset_str;
+      };
+
       let now = Timestamp::now();
       let remaining = resets_at.as_second() - now.as_second();
-      if remaining > 0 && period > 0 {
-        let elapsed_pct = ((period - remaining) as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
+      if !(remaining > 0 && period > 0) {
+        return reset_str;
+      }
+
+      let passed = period - remaining;
+      let elapsed_pct = passed as f64 / period as f64 * 100.0;
+      let elapsed_pct = elapsed_pct.clamp(0.0, 100.0);
+
+      if show_period_percentage {
         let display_pct = match display_format {
           DisplayMode::Remaining => 100.0 - elapsed_pct,
           DisplayMode::Usage => elapsed_pct,
         };
 
+        // Append period percentage to the reset string.
         reset_str = format!("{} ({:.0}%)", reset_str, display_pct);
+      }
+
+      // Append pacing warning to the reset string.
+      if show_pacing_warning && utilization > elapsed_pct {
+        reset_str = format!("{} ⚠", reset_str);
       }
     }
 

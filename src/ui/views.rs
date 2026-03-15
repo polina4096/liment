@@ -54,7 +54,9 @@ pub fn populate_menu(
       &window.title,
       window.utilization,
       window.resets_at.as_ref(),
-      if config.show_period_percentage { window.period_seconds } else { None },
+      window.period_seconds,
+      config.show_period_percentage,
+      config.show_pacing_warning,
       config.reset_time_format,
       config.display_mode,
     ));

@@ -41,6 +41,9 @@ pub struct Config {
   /// Whether to show period percentage next to "resets in".
   pub show_period_percentage: bool,
 
+  /// Whether to show a warning indicator when usage outpaces time elapsed.
+  pub show_pacing_warning: bool,
+
   /// Reset time format: "relative" (resets in 3h) or "absolute" (resets on 13 Feb, 14:00).
   #[default(DateTimeFormat::Relative)]
   pub reset_time_format: DateTimeFormat,
