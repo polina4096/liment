@@ -48,13 +48,13 @@ static CONFIG_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 });
 
 fn main() -> Result<()> {
+  // Process CLI arguments.
+  let args = CliArgs::parse();
+
   utils::log::init_logger();
   color_eyre::install()?;
 
   Config::ensure_exists()?;
-
-  // Process CLI arguments.
-  let args = CliArgs::parse();
 
   if args.open_config {
     edit::edit_file(&*CONFIG_PATH)?;
