@@ -33,8 +33,8 @@ impl From<UsageResponse> for UsageData {
       }
 
       return Some(ApiUsage {
-        usage_usd: extra.used_credits / 100.0,
-        limit_usd: Some(extra.monthly_limit / 100.0),
+        usage_usd: extra.used_credits.unwrap_or(0.0) / 100.0,
+        limit_usd: extra.monthly_limit.map(|l| l / 100.0),
       });
     });
 
@@ -51,7 +51,7 @@ impl From<UsageResponse> for UsageData {
         windows.push(UsageWindow {
           title: title.to_string(),
           short_title: short_title.map(|s| s.to_string()),
-          utilization: b.utilization,
+          utilization: b.utilization.unwrap_or(0.0),
           resets_at: b.resets_at,
           period_seconds: Some(*period_secs),
         });
@@ -64,15 +64,18 @@ impl From<UsageResponse> for UsageData {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageBucket {
-  pub utilization: f64,
+  #[serde(default)]
+  pub utilization: Option<f64>,
   pub resets_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExtraUsage {
   pub is_enabled: bool,
-  pub monthly_limit: f64,
-  pub used_credits: f64,
+  #[serde(default)]
+  pub monthly_limit: Option<f64>,
+  #[serde(default)]
+  pub used_credits: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
