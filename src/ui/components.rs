@@ -8,10 +8,10 @@ use objc2_foundation::{NSArray, NSString};
 
 use crate::{
   config::{DateTimeFormat, DisplayMode},
-  providers::TierInfo,
+  providers::{PeakHoursInfo, TierInfo},
   utils::{
     macos::NSViewExt,
-    time::{format_absolute_time, format_reset_time},
+    time::{format_absolute_time, format_reset_time, format_until_time},
   },
 };
 
@@ -261,6 +261,44 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<&TierInfo>) 
       layer.setCornerRadius(badge_view.fittingSize().height / 2.0);
     }
   }
+
+  layout(&container);
+
+  return container;
+}
+
+pub fn peak_hours_row(mtm: MainThreadMarker, info: &PeakHoursInfo) -> Retained<NSView> {
+  let container = NSView::init(mtm.alloc::<NSView>());
+
+  let label = if info.is_peak { "peak" } else { "off-peak" };
+  let text = format!("{} (until {})", label, format_until_time(&info.ends_at));
+
+  let field = NSTextField::labelWithString(&NSString::from_str(&text), mtm);
+  field.noAutoresize();
+  field.setEditable(false);
+  field.setBezeled(false);
+  field.setDrawsBackground(false);
+
+  let font = NSFont::systemFontOfSize_weight(11.0, font_weight_regular());
+  field.setFont(Some(&font));
+
+  let color = if info.is_peak {
+    NSColor::systemOrangeColor()
+  }
+  else {
+    NSColor::secondaryLabelColor()
+  };
+  field.setTextColor(Some(&color));
+
+  container.addSubview(&field);
+
+  activate(&[
+    &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
+    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+    &field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 0.0),
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&field.bottomAnchor(), 2.0),
+  ]);
 
   layout(&container);
 

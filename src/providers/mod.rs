@@ -42,9 +42,18 @@ pub struct TierInfo {
   pub color: Rgb<u8>,
 }
 
+pub struct PeakHoursInfo {
+  pub is_peak: bool,
+  /// When the current peak/off-peak period ends.
+  pub ends_at: Timestamp,
+}
+
 pub struct UsageData {
   /// API/extra usage credit info.
   pub api_usage: Option<ApiUsage>,
+
+  /// Peak hours info, if applicable.
+  pub peak_hours: Option<PeakHoursInfo>,
 
   /// Usage windows (e.g. 5h limit, 7d limit).
   pub windows: Vec<UsageWindow>,

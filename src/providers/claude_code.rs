@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 
-use super::{DataProvider, ProviderKind, UsageData};
+use super::{DataProvider, PeakHoursInfo, ProviderKind, UsageData};
 use crate::providers::{ApiUsage, TierInfo, UsageWindow};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -23,6 +23,38 @@ pub struct UsageResponse {
   pub seven_day_sonnet: Option<UsageBucket>,
   pub seven_day_opus: Option<UsageBucket>,
   pub extra_usage: Option<ExtraUsage>,
+}
+
+/// Weekdays 13:00–19:00 GMT are peak hours for Claude.
+pub fn compute_claude_peak_hours() -> PeakHoursInfo {
+  let now = Timestamp::now().to_zoned(jiff::tz::TimeZone::get("GMT").unwrap());
+  let weekday = now.weekday();
+  let hour = now.hour();
+
+  let is_weekday = weekday != jiff::civil::Weekday::Saturday && weekday != jiff::civil::Weekday::Sunday;
+  let is_peak = is_weekday && hour >= 13 && hour < 19;
+
+  let ends_at = if is_peak {
+    // Peak ends at 19:00 today
+    now.with().hour(19).minute(0).second(0).build().unwrap().timestamp()
+  }
+  else if is_weekday && hour < 13 {
+    // Off-peak ends at 13:00 today
+    now.with().hour(13).minute(0).second(0).build().unwrap().timestamp()
+  }
+  else {
+    // Weekend or weekday after 19:00 — next peak is Monday 13:00 (or tomorrow if weekday)
+    let days_until = match weekday {
+      jiff::civil::Weekday::Friday if hour >= 19 => 3,
+      jiff::civil::Weekday::Saturday => 2,
+      jiff::civil::Weekday::Sunday => 1,
+      _ => 1, // weekday after 19:00
+    };
+    let next_day = now.checked_add(jiff::SignedDuration::from_hours(days_until * 24)).unwrap();
+    next_day.with().hour(13).minute(0).second(0).build().unwrap().timestamp()
+  };
+
+  return PeakHoursInfo { is_peak, ends_at };
 }
 
 impl From<UsageResponse> for UsageData {
@@ -58,7 +90,11 @@ impl From<UsageResponse> for UsageData {
       }
     }
 
-    return UsageData { api_usage, windows };
+    return UsageData {
+      api_usage,
+      peak_hours: Some(compute_claude_peak_hours()),
+      windows,
+    };
   }
 }
 

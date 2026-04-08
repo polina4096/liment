@@ -27,3 +27,24 @@ pub fn format_absolute_time(resets_at: &Timestamp) -> String {
   let dt = resets_at.to_zoned(jiff::tz::TimeZone::system());
   return format!("{:02}.{:02}, {:02}:{:02}", dt.day(), dt.month(), dt.hour(), dt.minute());
 }
+
+/// Formats a future timestamp as "HH:MM", "tomorrow, HH:MM", or "DD.MM, HH:MM".
+pub fn format_until_time(ts: &Timestamp) -> String {
+  let tz = jiff::tz::TimeZone::system();
+  let target = ts.to_zoned(tz.clone());
+  let now = Timestamp::now().to_zoned(tz);
+
+  let time = format!("{:02}:{:02}", target.hour(), target.minute());
+
+  if target.date() == now.date() {
+    return time;
+  }
+
+  if let Ok(tomorrow) = now.date().checked_add(jiff::SignedDuration::from_hours(24)) {
+    if target.date() == tomorrow {
+      return format!("tomorrow, {}", time);
+    }
+  }
+
+  return format!("{:02}.{:02}, {}", target.day(), target.month(), time);
+}
