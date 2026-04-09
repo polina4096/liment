@@ -43,7 +43,7 @@ pub fn init_logger() {
 
   let level = std::env::var("RUST_LOG").ok().and_then(|s| s.parse().ok()).unwrap_or(LevelFilter::Debug);
 
-  let pkg = env!("CARGO_PKG_NAME");
+  let pkg = env!("CARGO_CRATE_NAME");
   let result = fern::Dispatch::new()
     .filter(move |metadata| metadata.target().starts_with(pkg))
     .format(|out, message, record| {

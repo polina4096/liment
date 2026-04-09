@@ -43,7 +43,7 @@ impl Updater {
 }
 
 /// Checks for a newer release and returns the new state.
-/// Performs a blocking HTTP request — call from a background thread.
+/// Performs a blocking HTTP request -- call from a background thread.
 pub fn check_for_update() -> UpdateState {
   match fetch_latest_release() {
     Err(e) => {
