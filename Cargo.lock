@@ -673,7 +673,7 @@ checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 
 [[package]]
 name = "liment"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "block2",
  "camino",
