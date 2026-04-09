@@ -78,7 +78,7 @@ show_period_percentage = false
 reset_time_format = "relative"
 
 # How often to refetch usage data, in seconds.
-refetch_interval = 60
+refetch_interval = 450
 ```
 
 ## License

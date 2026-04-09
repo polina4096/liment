@@ -49,7 +49,7 @@ pub struct Config {
   pub reset_time_format: DateTimeFormat,
 
   /// How often to refetch usage data, in seconds.
-  #[default = 60]
+  #[default = 450]
   pub refetch_interval: u32,
 
   /// Whether to automatically check for updates on startup.
