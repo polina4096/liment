@@ -40,8 +40,11 @@ pub fn format_until_time(ts: &Timestamp) -> String {
     return time;
   }
 
-  if let Ok(tomorrow) = now.date().checked_add(jiff::SignedDuration::from_hours(24)) {
-    if target.date() == tomorrow {
+  let one_day = jiff::SignedDuration::from_hours(24);
+  if let Ok(tomorrow) = now.date().checked_add(one_day) {
+    let target_date = target.date();
+
+    if target_date == tomorrow {
       return format!("tomorrow, {}", time);
     }
   }

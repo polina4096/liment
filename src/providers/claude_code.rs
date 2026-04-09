@@ -32,7 +32,7 @@ pub fn compute_claude_peak_hours() -> PeakHoursInfo {
   let hour = now.hour();
 
   let is_weekday = weekday != jiff::civil::Weekday::Saturday && weekday != jiff::civil::Weekday::Sunday;
-  let is_peak = is_weekday && hour >= 13 && hour < 19;
+  let is_peak = is_weekday && (13 .. 19).contains(&hour);
 
   let ends_at = if is_peak {
     // Peak ends at 19:00 today
