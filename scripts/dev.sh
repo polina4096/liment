@@ -53,4 +53,5 @@ codesign --force --sign - "$APP"
 #   LIMENT_DEBUG_REFETCH_INTERVAL=5      - override refetch interval (seconds)
 #   LIMENT_DEBUG_TIER="Pro:90,145,210"   - override tier badge (name:r,g,b)
 #   LIMENT_DEBUG_EXTRA_USAGE="4.20:10"   - override extra usage (used:limit or used)
+#   LIMENT_DEBUG_PEAK_HOURS=1            - force peak hours on (presence-only)
 exec "$APP/Contents/MacOS/liment"

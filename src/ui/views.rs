@@ -45,14 +45,6 @@ pub fn populate_menu(
   header_item.setView(Some(&header_view));
   menu.addItem(&header_item);
 
-  // Peak hours indicator.
-  if let Some(peak) = &data.peak_hours {
-    let peak_item = NSMenuItem::new(mtm);
-    let peak_view = components::peak_hours_row(mtm, peak);
-    peak_item.setView(Some(&peak_view));
-    menu.addItem(&peak_item);
-  }
-
   // Usage windows.
   let config = app.ivars().config();
 
@@ -67,6 +59,14 @@ pub fn populate_menu(
       reset_time_format: config.reset_time_format,
       display_mode: config.display_mode,
     }));
+  }
+
+  // Peak hours indicator (under all usages, above the separator).
+  if let Some(peak) = &data.peak_hours {
+    let peak_item = NSMenuItem::new(mtm);
+    let peak_view = components::peak_hours_row(mtm, peak);
+    peak_item.setView(Some(&peak_view));
+    menu.addItem(&peak_item);
   }
 
   // API / extra usage.

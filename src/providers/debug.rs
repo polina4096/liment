@@ -5,7 +5,7 @@ use rgb::Rgb;
 
 use crate::{
   constants::*,
-  providers::{ApiUsage, DataProvider, ProviderKind, TierInfo, UsageData},
+  providers::{ApiUsage, DataProvider, PeakHoursInfo, ProviderKind, TierInfo, UsageData},
 };
 
 /// Wraps another provider and overrides its data with values from environment variables.
@@ -15,6 +15,7 @@ pub struct DebugProvider {
   utilization: Option<f64>,
   resets_in: Option<i64>,
   extra_usage: Option<ApiUsage>,
+  force_peak: bool,
 }
 
 impl DebugProvider {
@@ -24,14 +25,15 @@ impl DebugProvider {
     let resets_in = std::env::var(LIMENT_DEBUG_RESETS_IN).ok().and_then(|v| v.parse().ok());
     let tier = std::env::var(LIMENT_DEBUG_TIER).ok().and_then(|v| parse_tier(&v));
     let extra_usage = std::env::var(LIMENT_DEBUG_EXTRA_USAGE).ok().and_then(|v| parse_extra_usage(&v));
+    let force_peak = std::env::var(LIMENT_DEBUG_PEAK_HOURS).is_ok();
 
-    if utilization.is_none() && resets_in.is_none() && tier.is_none() && extra_usage.is_none() {
+    if utilization.is_none() && resets_in.is_none() && tier.is_none() && extra_usage.is_none() && !force_peak {
       return None;
     }
 
     log::info!(
       "Debug overrides active: utilization={utilization:?}, resets_in={resets_in:?}, \
-       tier={}, extra_usage={}",
+       tier={}, extra_usage={}, force_peak={force_peak}",
       tier.is_some(),
       extra_usage.is_some(),
     );
@@ -42,6 +44,7 @@ impl DebugProvider {
       resets_in,
       tier,
       extra_usage,
+      force_peak,
     });
   }
 }
@@ -101,6 +104,13 @@ impl DataProvider for DebugProvider {
         usage_usd: extra_usage.usage_usd,
         limit_usd: extra_usage.limit_usd,
       });
+    }
+
+    if self.force_peak {
+      let ends_at = data.peak_hours.as_ref().map(|p| p.ends_at).unwrap_or_else(|| {
+        Timestamp::now().checked_add(jiff::SignedDuration::from_secs(3600)).unwrap()
+      });
+      data.peak_hours = Some(PeakHoursInfo { is_peak: true, ends_at });
     }
 
     return Some(data);

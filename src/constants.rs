@@ -17,3 +17,6 @@ pub const LIMENT_DEBUG_TIER: &str = "LIMENT_DEBUG_TIER";
 
 /// Override extra usage: "used:limit" in USD (e.g. "4.20:10.00", or "4.20" for no limit).
 pub const LIMENT_DEBUG_EXTRA_USAGE: &str = "LIMENT_DEBUG_EXTRA_USAGE";
+
+/// Force peak hours on (any value, presence-only).
+pub const LIMENT_DEBUG_PEAK_HOURS: &str = "LIMENT_DEBUG_PEAK_HOURS";

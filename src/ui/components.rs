@@ -270,34 +270,70 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<&TierInfo>) 
 pub fn peak_hours_row(mtm: MainThreadMarker, info: &PeakHoursInfo) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
-  let label = if info.is_peak { "peak" } else { "off-peak" };
-  let text = format!("{} (until {})", label, format_until_time(&info.ends_at));
+  // Status dot.
+  const DOT_SIZE: CGFloat = 7.0;
+  let dot = NSView::init(mtm.alloc::<NSView>());
+  dot.noAutoresize();
+  dot.setWantsLayer(true);
 
-  let field = NSTextField::labelWithString(&NSString::from_str(&text), mtm);
-  field.noAutoresize();
-  field.setEditable(false);
-  field.setBezeled(false);
-  field.setDrawsBackground(false);
-
-  let font = NSFont::systemFontOfSize_weight(11.0, font_weight_regular());
-  field.setFont(Some(&font));
-
-  let color = if info.is_peak {
+  let accent_color = if info.is_peak {
     NSColor::systemOrangeColor()
   }
   else {
     NSColor::secondaryLabelColor()
   };
-  field.setTextColor(Some(&color));
 
-  container.addSubview(&field);
+  if let Some(layer) = dot.layer() {
+    layer.setBackgroundColor(Some(&accent_color.CGColor()));
+    layer.setCornerRadius(DOT_SIZE / 2.0);
+  }
+  container.addSubview(&dot);
+
+  // Label.
+  let label_text = if info.is_peak { "Peak hours" } else { "Off-peak" };
+  let label_field = NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+  label_field.noAutoresize();
+  label_field.setEditable(false);
+  label_field.setBezeled(false);
+  label_field.setDrawsBackground(false);
+
+  let weight = if info.is_peak { font_weight_medium() } else { font_weight_regular() };
+  let font = NSFont::systemFontOfSize_weight(11.0, weight);
+  label_field.setFont(Some(&font));
+  label_field.setTextColor(Some(&accent_color));
+  container.addSubview(&label_field);
+
+  // Right-aligned "until HH:MM".
+  let time_text = format!("until {}", format_until_time(&info.ends_at));
+  let time_field = NSTextField::labelWithString(&NSString::from_str(&time_text), mtm);
+  time_field.noAutoresize();
+  time_field.setEditable(false);
+  time_field.setBezeled(false);
+  time_field.setDrawsBackground(false);
+
+  let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
+  time_field.setFont(Some(&small_font));
+  time_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
+  time_field.setTextColor(Some(&NSColor::secondaryLabelColor()));
+  container.addSubview(&time_field);
 
   activate(&[
     &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
-    &field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
-    &field.trailingAnchor().constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
-    &field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 0.0),
-    &container.bottomAnchor().constraintEqualToAnchor_constant(&field.bottomAnchor(), 2.0),
+    // Dot: leading, centered on the label row.
+    &dot.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
+    &dot.centerYAnchor().constraintEqualToAnchor(&label_field.centerYAnchor()),
+    &dot.widthAnchor().constraintEqualToConstant(DOT_SIZE),
+    &dot.heightAnchor().constraintEqualToConstant(DOT_SIZE),
+    // Label: right after the dot.
+    &label_field.leadingAnchor().constraintEqualToAnchor_constant(&dot.trailingAnchor(), 6.0),
+    &label_field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 2.0),
+    // Time: right-aligned, baseline-aligned with the label.
+    &time_field
+      .trailingAnchor()
+      .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+    &time_field.centerYAnchor().constraintEqualToAnchor(&label_field.centerYAnchor()),
+    // Container bottom.
+    &container.bottomAnchor().constraintEqualToAnchor_constant(&label_field.bottomAnchor(), 3.0),
   ]);
 
   layout(&container);
