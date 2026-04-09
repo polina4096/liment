@@ -31,6 +31,12 @@ use crate::{
   utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
 };
 
+struct TrayBucket<'a> {
+  text: &'a str,
+  utilization: f64,
+  warn: bool,
+}
+
 pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
   provider: RefCell<Arc<dyn DataProvider>>,
@@ -366,10 +372,16 @@ impl AppDelegate {
       if let Some(tray_button) = status_item.button(mtm) {
         let img = Self::build_tray_image(
           tray_icon_svg,
-          "-- --",
-          0.0,
-          "-- --",
-          0.0,
+          TrayBucket {
+            text: "-- --",
+            utilization: 0.0,
+            warn: false,
+          },
+          TrayBucket {
+            text: "-- --",
+            utilization: 0.0,
+            warn: false,
+          },
           config.monochrome_icon,
           config.stats_colors,
         );
@@ -399,10 +411,27 @@ impl AppDelegate {
       let line1 = format!("{} {:>w$}%", label0, v0);
       let line2 = format!("{} {:>w$}%", label1, v1);
 
+      let tray_warn_enabled = config.show_tray_pacing_warning;
+      let warn0 = tray_warn_enabled && w0.is_some_and(|w| w.is_pacing_warning());
+      let warn1 = tray_warn_enabled && w1.is_some_and(|w| w.is_pacing_warning());
+
       let u0 = u0 / 100.0;
       let u1 = u1 / 100.0;
-      let img =
-        Self::build_tray_image(tray_icon_svg, &line1, u0, &line2, u1, config.monochrome_icon, config.stats_colors);
+      let img = Self::build_tray_image(
+        tray_icon_svg,
+        TrayBucket {
+          text: &line1,
+          utilization: u0,
+          warn: warn0,
+        },
+        TrayBucket {
+          text: &line2,
+          utilization: u1,
+          warn: warn1,
+        },
+        config.monochrome_icon,
+        config.stats_colors,
+      );
 
       tray_button.setImage(Some(&img));
     }
@@ -425,7 +454,8 @@ impl AppDelegate {
 
     // Wrap in mutable to add attributes.
     let result = NSMutableAttributedString::initWithAttributedString(NSMutableAttributedString::alloc(), &attr);
-    let range = NSRange::new(0, str.len());
+    // NSAttributedString indexes characters in UTF-16 code units, not bytes.
+    let range = NSRange::new(0, text.encode_utf16().count());
 
     let color = if stats_colors { Self::utilization_color(p) } else { NSColor::controlTextColor() };
     unsafe {
@@ -442,21 +472,42 @@ impl AppDelegate {
   /// dim the content on inactive displays via menu bar compositing.
   fn build_tray_image(
     icon_svg: &'static [u8],
-    line1: &str,
-    p1: f64,
-    line2: &str,
-    p2: f64,
+    bucket1: TrayBucket,
+    bucket2: TrayBucket,
     monochrome_icon: bool,
     stats_colors: bool,
   ) -> Retained<NSImage> {
+    let TrayBucket {
+      text: line1,
+      utilization: p1,
+      warn: warn1,
+    } = bucket1;
+    let TrayBucket {
+      text: line2,
+      utilization: p2,
+      warn: warn2,
+    } = bucket2;
+
     let attr1 = Self::build_attributed_line(line1, p1, stats_colors);
     let attr2 = Self::build_attributed_line(line2, p2, stats_colors);
+
+    // Pre-build the warning character once if any line needs it; we use its measured size
+    // to reserve space in the tray image layout and draw it in the block.
+    let warn_attr: Option<Retained<NSAttributedString>> =
+      if warn1 || warn2 { Some(Self::build_warning_char()) } else { None };
+    let warn_size = warn_attr.as_ref().map(|a| a.size()).unwrap_or(NSSize::new(0.0, 0.0));
+    let warn_width = warn_size.width;
+    let warn_height = warn_size.height;
 
     let size1 = attr1.size();
     let size2 = attr2.size();
 
-    // Find longest string width & text height.
-    let text_width = size1.width.max(size2.width).ceil();
+    const TRI_PADDING: f64 = 6.0;
+    let tri_extra_1 = if warn1 { TRI_PADDING + warn_width } else { 0.0 };
+    let tri_extra_2 = if warn2 { TRI_PADDING + warn_width } else { 0.0 };
+
+    // Find longest line width (text + optional trailing warning glyph).
+    let text_width = (size1.width + tri_extra_1).max(size2.width + tri_extra_2).ceil();
     let line_height = 10.0_f64;
     let text_height = line_height * 2.0;
 
@@ -477,6 +528,15 @@ impl AppDelegate {
 
     logo_img.setSize(NSSize::new(logo_size, logo_size));
 
+    let size1_width = size1.width;
+    let size2_width = size2.width;
+
+    // If the warn glyph box is taller than a single line row, push the top-line draw point
+    // down by half the overhang. The other half of the overflow sits in the glyph's empty
+    // ascender padding (⚠ has no pixels near the top of its metric box), so a half-shift
+    // keeps the visible glyph vertically centered in the line without clipping.
+    let warn_y_overhang = (warn_height - line_height).max(0.0) / 2.0;
+
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
       // Draw logo on the left, vertically centered.
       let logo_y = (height - logo_size) / 2.0;
@@ -494,12 +554,41 @@ impl AppDelegate {
       attr1.drawAtPoint(CGPoint::new(text_x, line_height));
       attr2.drawAtPoint(CGPoint::new(text_x, 0.0));
 
+      // Draw a yellow warning glyph at the end of each line that needs one. The top line is
+      // shifted down by the warn glyph's vertical overhang so its top edge fits in the image.
+      if let Some(wa) = warn_attr.as_ref() {
+        if warn1 {
+          wa.drawAtPoint(CGPoint::new(text_x + size1_width + TRI_PADDING, line_height - warn_y_overhang));
+        }
+        if warn2 {
+          wa.drawAtPoint(CGPoint::new(text_x + size2_width + TRI_PADDING, 0.0));
+        }
+      }
+
       return Bool::YES;
     });
 
     let img = NSImage::imageWithSize_flipped_drawingHandler(image_size, false, &block);
 
     return img;
+  }
+
+  /// Builds a yellow, bold `⚠` attributed string used as the pacing-warning indicator
+  /// next to a tray line.
+  fn build_warning_char() -> Retained<NSAttributedString> {
+    let font = NSFont::systemFontOfSize_weight(11.0, unsafe { NSFontWeightSemibold });
+    let str = NSString::from_str("⚠");
+
+    let attr = unsafe { NSAttributedString::initWithString_attributes(NSAttributedString::alloc(), &str, None) };
+    let result = NSMutableAttributedString::initWithAttributedString(NSMutableAttributedString::alloc(), &attr);
+
+    let range = NSRange::new(0, "⚠".encode_utf16().count());
+    unsafe {
+      result.addAttribute_value_range(NSFontAttributeName, &font, range);
+      result.addAttribute_value_range(NSForegroundColorAttributeName, &NSColor::yellowColor(), range);
+    }
+
+    return Retained::into_super(result);
   }
 
   /// Returns a system catalog color based on utilization level.

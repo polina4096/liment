@@ -84,6 +84,30 @@ pub struct UsageWindow {
   pub period_seconds: Option<i64>,
 }
 
+impl UsageWindow {
+  /// Returns true if the current utilization is outpacing elapsed time for this bucket's period.
+  pub fn is_pacing_warning(&self) -> bool {
+    let Some(resets_at) = &self.resets_at
+    else {
+      return false;
+    };
+    let Some(period) = self.period_seconds
+    else {
+      return false;
+    };
+
+    let remaining = resets_at.as_second() - Timestamp::now().as_second();
+    if remaining <= 0 || period <= 0 {
+      return false;
+    }
+
+    let passed = period - remaining;
+    let elapsed_pct = (passed as f64 / period as f64 * 100.0).clamp(0.0, 100.0);
+
+    return self.utilization > elapsed_pct;
+  }
+}
+
 pub trait DataProvider: Send + Sync {
   /// Returns the kind of this provider.
   fn kind(&self) -> ProviderKind;
