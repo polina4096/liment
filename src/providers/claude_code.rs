@@ -162,8 +162,14 @@ impl std::fmt::Display for SubscriptionTier {
 }
 
 pub struct ClaudeCodeProvider {
-  token: Mutex<SecretString>,
+  token: Mutex<TokenState>,
   backoff: Mutex<BackoffState>,
+}
+
+struct TokenState {
+  secret: SecretString,
+  /// Known expiry from the keychain. `None` when the source doesn't provide one (e.g. config override).
+  expires_at: Option<Timestamp>,
 }
 
 struct BackoffState {
@@ -185,11 +191,14 @@ impl ClaudeCodeProvider {
     return Ok(Self { token: Mutex::new(token), backoff });
   }
 
-  fn fetch_token(settings: &ClaudeCodeSettings) -> Result<SecretString> {
+  fn fetch_token(settings: &ClaudeCodeSettings) -> Result<TokenState> {
     if let Some(token) = &settings.token {
       log::info!("Using token from provider settings");
 
-      return Ok(SecretString::from(token.clone()));
+      return Ok(TokenState {
+        secret: SecretString::from(token.clone()),
+        expires_at: None,
+      });
     }
 
     log::debug!("Token not set in config, fetching from keychain");
@@ -197,7 +206,7 @@ impl ClaudeCodeProvider {
     return Self::fetch_keychain_token();
   }
 
-  fn fetch_keychain_token() -> Result<SecretString> {
+  fn fetch_keychain_token() -> Result<TokenState> {
     let results = ItemSearchOptions::new()
       .class(ItemClass::generic_password())
       .service("Claude Code-credentials")
@@ -218,6 +227,8 @@ impl ClaudeCodeProvider {
     struct ClaudeOAuth {
       #[serde(rename = "accessToken")]
       access_token: String,
+      #[serde(rename = "expiresAt")]
+      expires_at: Option<i64>,
     }
 
     #[derive(Deserialize)]
@@ -228,7 +239,11 @@ impl ClaudeCodeProvider {
 
     let json_str = String::from_utf8(data)?;
     let value: ClaudeKeychain = serde_json::from_str(&json_str)?;
-    return Ok(SecretString::from(value.claude_oauth.access_token));
+    let expires_at = value.claude_oauth.expires_at.and_then(|ms| Timestamp::from_millisecond(ms).ok());
+    return Ok(TokenState {
+      secret: SecretString::from(value.claude_oauth.access_token),
+      expires_at,
+    });
   }
 
   fn fetch_usage(&self) -> Option<UsageResponse> {
@@ -269,19 +284,44 @@ impl ClaudeCodeProvider {
       }
     }
 
+    // Proactive expiry check: if the current token is known to have expired,
+    // re-read the keychain before making the request.
+    let needs_refresh = {
+      let token_guard = self.token.lock().unwrap();
+      token_guard.expires_at.is_some_and(|ts| Timestamp::now() >= ts)
+    };
+    if needs_refresh {
+      log::debug!("Access token expired, re-reading keychain before request");
+      match Self::fetch_keychain_token() {
+        Ok(new_state) => {
+          let mut token_guard = self.token.lock().unwrap();
+          if new_state.secret.expose_secret() == token_guard.secret.expose_secret() {
+            log::warn!("Keychain still has the same expired token, skipping request");
+            return None;
+          }
+          *token_guard = new_state;
+          log::info!("Loaded fresh token from keychain (proactive refresh)");
+        }
+        Err(e) => {
+          log::error!("Failed to re-read keychain for expired token: {}", e);
+          return None;
+        }
+      }
+    }
+
     let mut result = self.get_inner(url);
 
     if let Err(ureq::Error::StatusCode(401)) = &result {
       log::warn!("Got 401 for {}, refreshing token from keychain", url);
 
-      if let Ok(new_token) = Self::fetch_keychain_token() {
+      if let Ok(new_state) = Self::fetch_keychain_token() {
         {
           let mut token_guard = self.token.lock().unwrap();
-          if new_token.expose_secret() == token_guard.expose_secret() {
+          if new_state.secret.expose_secret() == token_guard.secret.expose_secret() {
             log::warn!("Keychain returned the same token, skipping retry (token likely expired)");
             return None;
           }
-          *token_guard = new_token;
+          *token_guard = new_state;
         }
 
         log::info!("Token refreshed, retrying request");
@@ -324,7 +364,7 @@ impl ClaudeCodeProvider {
 
     let token = self.token.lock().unwrap();
     let mut response = ureq::get(url)
-      .header("Authorization", &format!("Bearer {}", token.expose_secret()))
+      .header("Authorization", &format!("Bearer {}", token.secret.expose_secret()))
       .header("anthropic-beta", "oauth-2025-04-20")
       .header("User-Agent", "claude-code/2.1.71")
       .call()?;
