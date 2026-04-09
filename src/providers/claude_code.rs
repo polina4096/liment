@@ -269,7 +269,7 @@ impl ClaudeCodeProvider {
       }
     }
 
-    let result = self.get_inner(url);
+    let mut result = self.get_inner(url);
 
     if let Err(ureq::Error::StatusCode(401)) = &result {
       log::warn!("Got 401 for {}, refreshing token from keychain", url);
@@ -286,7 +286,7 @@ impl ClaudeCodeProvider {
 
         log::info!("Token refreshed, retrying request");
 
-        return self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e)).ok();
+        result = self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e));
       }
       else {
         log::error!("Failed to refresh token from keychain");
