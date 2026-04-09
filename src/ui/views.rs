@@ -6,7 +6,7 @@ use tap::Tap as _;
 
 use crate::{
   delegate::AppDelegate,
-  providers::{ProviderKind, TierInfo, UsageData},
+  providers::{ApiUsage, ProviderKind, TierInfo, UsageData},
   ui::components,
   updater::UpdateState,
 };
@@ -71,23 +71,7 @@ pub fn populate_menu(
 
   // API / extra usage.
   if let Some(api_usage) = &data.api_usage {
-    menu.addItem(&NSMenuItem::separatorItem(mtm));
-
-    let header_view = components::label_row(mtm, "Extra Usage", true);
-    let header_item = NSMenuItem::new(mtm);
-    header_item.setView(Some(&header_view));
-    menu.addItem(&header_item);
-
-    let value_text = if let Some(limit) = api_usage.limit_usd {
-      format!("${:.2} / ${:.2}", api_usage.usage_usd, limit)
-    }
-    else {
-      format!("${:.2}", api_usage.usage_usd)
-    };
-    let used_view = components::key_value_row(mtm, "Spent", &value_text);
-    let used_item = NSMenuItem::new(mtm);
-    used_item.setView(Some(&used_view));
-    menu.addItem(&used_item);
+    extra_usage_section(menu, mtm, api_usage);
   }
 
   // Separator + Update + Refresh + Quit.
@@ -100,6 +84,67 @@ pub fn populate_menu(
   menu.addItem(&open_config_item(mtm, app));
   menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
+}
+
+/// Renders the "Extra Usage" section.
+///
+/// When there's no free overage grant, shows a single row:
+///   `Spent — $usage / $max_paid`
+///
+/// When a grant is present, splits into two parallel rows so each subsidy stream is visible:
+///   `Free — $consumed / $grant_total`
+///   `Paid — $out_of_pocket / $effective_cap`
+///
+/// where:
+///   - `consumed = min(usage, grant)` is how much of the grant has been used
+///   - `out_of_pocket = max(usage − grant, 0)` is what the user has actually been billed
+///   - `effective_cap = max(max_paid − grant, 0)` is the paid cap with the grant subtracted,
+///     so it represents the user's true out-of-pocket budget
+fn extra_usage_section(menu: &NSMenu, mtm: MainThreadMarker, api_usage: &ApiUsage) {
+  menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+  let header_view = components::label_row(mtm, "Extra Usage", true);
+  let header_item = NSMenuItem::new(mtm);
+  header_item.setView(Some(&header_view));
+  menu.addItem(&header_item);
+
+  let max_paid_text = |amount: f64| -> String {
+    if !api_usage.is_enabled {
+      return "$0.00".to_string();
+    }
+    if api_usage.max_paid_usd.is_none() {
+      return "unlimited".to_string();
+    }
+    return format!("${:.2}", amount);
+  };
+
+  match api_usage.free_credits_usd {
+    None => {
+      // No grant — single "Spent" row, same shape as before.
+      let cap = api_usage.max_paid_usd.unwrap_or(0.0);
+      let value = format!("${:.2} / {}", api_usage.usage_usd, max_paid_text(cap));
+      add_kv_row(menu, mtm, "Spent", &value);
+    }
+    Some(free) => {
+      // Free row: how much of the grant has been consumed.
+      let consumed = api_usage.usage_usd.min(free);
+      let free_value = format!("${:.2} / ${:.2}", consumed, free);
+      add_kv_row(menu, mtm, "Free", &free_value);
+
+      // Paid row: out-of-pocket against the cap minus the grant (the user's true budget).
+      let out_of_pocket = (api_usage.usage_usd - free).max(0.0);
+      let effective_cap = api_usage.max_paid_usd.map(|cap| (cap - free).max(0.0)).unwrap_or(0.0);
+      let paid_value = format!("${:.2} / {}", out_of_pocket, max_paid_text(effective_cap));
+      add_kv_row(menu, mtm, "Paid", &paid_value);
+    }
+  }
+}
+
+fn add_kv_row(menu: &NSMenu, mtm: MainThreadMarker, key: &str, value: &str) {
+  let view = components::key_value_row(mtm, key, value);
+  let item = NSMenuItem::new(mtm);
+  item.setView(Some(&view));
+  menu.addItem(&item);
 }
 
 const UPDATE_ITEM_TAG: isize = 9001;

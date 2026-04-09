@@ -60,11 +60,20 @@ pub struct UsageData {
 }
 
 pub struct ApiUsage {
+  /// Whether extra paid billing is enabled on the account.
+  pub is_enabled: bool,
+
   /// Credits consumed (USD).
   pub usage_usd: f64,
 
-  /// Monthly spending limit (USD), if any.
-  pub limit_usd: Option<f64>,
+  /// Maximum allowed paid spending per month (USD), if a cap is set. `None` means no cap
+  /// configured (the user has set "unlimited" or has no cap). When `is_enabled` is `false`
+  /// the effective max paid spend is `0`.
+  pub max_paid_usd: Option<f64>,
+
+  /// Free overage credits gifted by Anthropic (USD), if any. Sourced from the
+  /// `/api/oauth/organizations/{uuid}/overage_credit_grant` endpoint.
+  pub free_credits_usd: Option<f64>,
 }
 
 pub struct UsageWindow {

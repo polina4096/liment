@@ -72,22 +72,28 @@ fn parse_tier(s: &str) -> Option<TierInfo> {
   });
 }
 
-/// Parses "used:limit" or "used" into an ApiUsage.
+/// Parses one of:
+///   `used` — only used credits, no cap, no free grant
+///   `used:max_paid` — used credits and a paid cap
+///   `used:max_paid:free` — adds a free overage grant on top
+/// Append `:disabled` at the end to force `is_enabled = false`.
 fn parse_extra_usage(s: &str) -> Option<ApiUsage> {
-  return match s.split_once(':') {
-    Some((used, limit)) => {
-      Some(ApiUsage {
-        usage_usd: used.trim().parse().ok()?,
-        limit_usd: Some(limit.trim().parse().ok()?),
-      })
-    }
-    None => {
-      Some(ApiUsage {
-        usage_usd: s.trim().parse().ok()?,
-        limit_usd: None,
-      })
-    }
+  let (body, is_enabled) = match s.strip_suffix(":disabled") {
+    Some(body) => (body, false),
+    None => (s, true),
   };
+
+  let parts: Vec<&str> = body.split(':').collect();
+  let usage_usd: f64 = parts.first()?.trim().parse().ok()?;
+  let max_paid_usd: Option<f64> = parts.get(1).and_then(|s| s.trim().parse().ok());
+  let free_credits_usd: Option<f64> = parts.get(2).and_then(|s| s.trim().parse().ok());
+
+  return Some(ApiUsage {
+    is_enabled,
+    usage_usd,
+    max_paid_usd,
+    free_credits_usd,
+  });
 }
 
 impl DataProvider for DebugProvider {
@@ -110,8 +116,10 @@ impl DataProvider for DebugProvider {
 
     if let Some(ref extra_usage) = self.extra_usage {
       data.api_usage = Some(ApiUsage {
+        is_enabled: extra_usage.is_enabled,
         usage_usd: extra_usage.usage_usd,
-        limit_usd: extra_usage.limit_usd,
+        max_paid_usd: extra_usage.max_paid_usd,
+        free_credits_usd: extra_usage.free_credits_usd,
       });
     }
 

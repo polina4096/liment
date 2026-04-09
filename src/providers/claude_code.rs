@@ -1,4 +1,7 @@
-use std::{sync::Mutex, time::Instant};
+use std::{
+  sync::Mutex,
+  time::{Duration, Instant},
+};
 
 use color_eyre::eyre::{ContextCompat as _, Result};
 use jiff::Timestamp;
@@ -59,15 +62,13 @@ pub fn compute_claude_peak_hours() -> PeakHoursInfo {
 
 impl From<UsageResponse> for UsageData {
   fn from(usage: UsageResponse) -> Self {
-    let api_usage = usage.extra_usage.as_ref().and_then(|extra| {
-      if !extra.is_enabled {
-        return None;
-      }
-
-      return Some(ApiUsage {
+    let api_usage = usage.extra_usage.as_ref().map(|extra| {
+      return ApiUsage {
+        is_enabled: extra.is_enabled,
         usage_usd: extra.used_credits.unwrap_or(0.0) / 100.0,
-        limit_usd: extra.monthly_limit.map(|l| l / 100.0),
-      });
+        max_paid_usd: extra.monthly_limit.map(|l| l / 100.0),
+        free_credits_usd: None,
+      };
     });
 
     let mut windows = Vec::new();
@@ -121,8 +122,34 @@ pub struct ProfileResponse {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProfileOrganization {
+  pub uuid: String,
   pub rate_limit_tier: SubscriptionTier,
 }
+
+/// Response shape of `/api/oauth/organizations/{uuid}/overage_credit_grant`. Anthropic
+/// occasionally gifts overage credits to users; this endpoint reports the current grant.
+#[derive(Debug, Deserialize, Clone)]
+pub struct OverageCreditGrant {
+  #[serde(default)]
+  pub amount_minor_units: Option<i64>,
+  #[serde(default)]
+  pub currency: Option<String>,
+}
+
+impl OverageCreditGrant {
+  /// Converts the grant to a USD dollar amount, mirroring Claude Code's `mEH` formatter:
+  /// returns `None` unless both `amount_minor_units` and `currency == "USD"` are set.
+  fn to_usd(&self) -> Option<f64> {
+    let amount = self.amount_minor_units?;
+    let currency = self.currency.as_ref()?;
+    if !currency.eq_ignore_ascii_case("USD") {
+      return None;
+    }
+    return Some(amount as f64 / 100.0);
+  }
+}
+
+const OVERAGE_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Deserialize, Clone, Copy, strum::EnumIter)]
 pub enum SubscriptionTier {
@@ -164,6 +191,10 @@ impl std::fmt::Display for SubscriptionTier {
 pub struct ClaudeCodeProvider {
   token: Mutex<TokenState>,
   backoff: Mutex<BackoffState>,
+  /// Organization UUID, lazily populated from the first profile fetch.
+  org_uuid: Mutex<Option<String>>,
+  /// Cached overage credit grant info, refreshed at most once per `OVERAGE_GRANT_TTL`.
+  overage_grant: Mutex<OverageGrantCache>,
 }
 
 struct TokenState {
@@ -177,6 +208,12 @@ struct BackoffState {
   consecutive_failures: u32,
 }
 
+#[derive(Default)]
+struct OverageGrantCache {
+  grant: Option<OverageCreditGrant>,
+  fetched_at: Option<Instant>,
+}
+
 impl ClaudeCodeProvider {
   pub fn new(settings: &ClaudeCodeSettings) -> Result<Self> {
     log::info!("Initializing Claude Code provider");
@@ -188,7 +225,12 @@ impl ClaudeCodeProvider {
       consecutive_failures: 0,
     });
 
-    return Ok(Self { token: Mutex::new(token), backoff });
+    return Ok(Self {
+      token: Mutex::new(token),
+      backoff,
+      org_uuid: Mutex::new(None),
+      overage_grant: Mutex::new(OverageGrantCache::default()),
+    });
   }
 
   fn fetch_token(settings: &ClaudeCodeSettings) -> Result<TokenState> {
@@ -262,10 +304,52 @@ impl ClaudeCodeProvider {
 
     let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
 
-    return serde_json::from_str(&body)
+    let response: Option<ProfileResponse> = serde_json::from_str(&body)
       .inspect(|p: &ProfileResponse| log::debug!("Parsed profile: {:?}", p))
       .inspect_err(|e| log::warn!("Failed to parse profile response: {}", e))
       .ok();
+
+    // Cache the org UUID for use by other endpoints (e.g. overage credit grant).
+    if let Some(ref response) = response {
+      *self.org_uuid.lock().unwrap() = Some(response.organization.uuid.clone());
+    }
+
+    return response;
+  }
+
+  /// Fetches Anthropic-gifted overage credit info, with a 1-hour cache to match Claude Code's
+  /// own cache TTL. Returns `None` if the org UUID hasn't been learned yet (i.e. we haven't
+  /// fetched the profile yet) or if the request fails.
+  fn fetch_overage_grant(&self) -> Option<OverageCreditGrant> {
+    // Serve from cache if fresh.
+    {
+      let cache = self.overage_grant.lock().unwrap();
+      if let Some(fetched_at) = cache.fetched_at
+        && fetched_at.elapsed() < OVERAGE_GRANT_TTL
+      {
+        log::debug!("Using cached overage grant ({}s old)", fetched_at.elapsed().as_secs());
+        return cache.grant.clone();
+      }
+    }
+
+    let org_uuid = self.org_uuid.lock().unwrap().clone()?;
+
+    log::debug!("Fetching overage credit grant");
+    let url = format!("https://api.anthropic.com/api/oauth/organizations/{}/overage_credit_grant", org_uuid);
+    let body = self.get(&url)?;
+
+    let grant: Option<OverageCreditGrant> = serde_json::from_str(&body)
+      .inspect(|g: &OverageCreditGrant| log::debug!("Parsed overage grant: {:?}", g))
+      .inspect_err(|e| log::warn!("Failed to parse overage grant: {}", e))
+      .ok();
+
+    // Update cache regardless of parse outcome so a parse failure doesn't trigger
+    // a hot retry on every refresh.
+    let mut cache = self.overage_grant.lock().unwrap();
+    cache.grant = grant.clone();
+    cache.fetched_at = Some(Instant::now());
+
+    return grant;
   }
 
   fn get(&self, url: &str) -> Option<String> {
@@ -379,7 +463,25 @@ impl DataProvider for ClaudeCodeProvider {
   }
 
   fn fetch_data(&self) -> Option<UsageData> {
-    return Some(self.fetch_usage()?.into());
+    let mut data: UsageData = self.fetch_usage()?.into();
+
+    // Only bother fetching the overage grant if there's an extra-usage section to plumb
+    // it into. Free credits make no sense for accounts without extra usage in the first place.
+    if data.api_usage.is_some() {
+      // Lazily learn the org UUID via a profile fetch on first call. Subsequent calls
+      // hit the cached UUID directly.
+      if self.org_uuid.lock().unwrap().is_none() {
+        self.fetch_profile_response();
+      }
+
+      if let Some(grant) = self.fetch_overage_grant()
+        && let Some(api_usage) = data.api_usage.as_mut()
+      {
+        api_usage.free_credits_usd = grant.to_usd();
+      }
+    }
+
+    return Some(data);
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
