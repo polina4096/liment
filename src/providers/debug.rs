@@ -27,12 +27,7 @@ impl DebugProvider {
     let extra_usage = std::env::var(LIMENT_DEBUG_EXTRA_USAGE).ok().and_then(|v| parse_extra_usage(&v));
     let peak_hours = std::env::var(LIMENT_DEBUG_PEAK_HOURS).ok().and_then(|v| parse_bool(&v));
 
-    if utilization.is_none()
-      && resets_in.is_none()
-      && tier.is_none()
-      && extra_usage.is_none()
-      && peak_hours.is_none()
-    {
+    if utilization.is_none() && resets_in.is_none() && tier.is_none() && extra_usage.is_none() && peak_hours.is_none() {
       return None;
     }
 
@@ -121,9 +116,11 @@ impl DataProvider for DebugProvider {
     }
 
     if let Some(is_peak) = self.peak_hours {
-      let ends_at = data.peak_hours.as_ref().map(|p| p.ends_at).unwrap_or_else(|| {
-        Timestamp::now().checked_add(jiff::SignedDuration::from_secs(3600)).unwrap()
-      });
+      let ends_at = data
+        .peak_hours
+        .as_ref()
+        .map(|p| p.ends_at)
+        .unwrap_or_else(|| Timestamp::now().checked_add(jiff::SignedDuration::from_secs(3600)).unwrap());
       data.peak_hours = Some(PeakHoursInfo { is_peak, ends_at });
     }
 

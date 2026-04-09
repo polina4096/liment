@@ -204,7 +204,11 @@ impl DataProvider for CliproxyCodexProvider {
       }
     }
 
-    return Some(UsageData { api_usage: None, peak_hours: None, windows });
+    return Some(UsageData {
+      api_usage: None,
+      peak_hours: None,
+      windows,
+    });
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {

@@ -276,12 +276,7 @@ pub fn peak_hours_row(mtm: MainThreadMarker, info: &PeakHoursInfo) -> Retained<N
   dot.noAutoresize();
   dot.setWantsLayer(true);
 
-  let accent_color = if info.is_peak {
-    NSColor::systemOrangeColor()
-  }
-  else {
-    NSColor::secondaryLabelColor()
-  };
+  let accent_color = if info.is_peak { NSColor::systemOrangeColor() } else { NSColor::secondaryLabelColor() };
 
   if let Some(layer) = dot.layer() {
     layer.setBackgroundColor(Some(&accent_color.CGColor()));

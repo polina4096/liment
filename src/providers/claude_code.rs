@@ -275,7 +275,14 @@ impl ClaudeCodeProvider {
       log::warn!("Got 401 for {}, refreshing token from keychain", url);
 
       if let Ok(new_token) = Self::fetch_keychain_token() {
-        *self.token.lock().unwrap() = new_token;
+        {
+          let mut token_guard = self.token.lock().unwrap();
+          if new_token.expose_secret() == token_guard.expose_secret() {
+            log::warn!("Keychain returned the same token, skipping retry (token likely expired)");
+            return None;
+          }
+          *token_guard = new_token;
+        }
 
         log::info!("Token refreshed, retrying request");
 
