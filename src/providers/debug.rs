@@ -15,7 +15,7 @@ pub struct DebugProvider {
   utilization: Option<f64>,
   resets_in: Option<i64>,
   extra_usage: Option<ApiUsage>,
-  force_peak: bool,
+  peak_hours: Option<bool>,
 }
 
 impl DebugProvider {
@@ -25,15 +25,20 @@ impl DebugProvider {
     let resets_in = std::env::var(LIMENT_DEBUG_RESETS_IN).ok().and_then(|v| v.parse().ok());
     let tier = std::env::var(LIMENT_DEBUG_TIER).ok().and_then(|v| parse_tier(&v));
     let extra_usage = std::env::var(LIMENT_DEBUG_EXTRA_USAGE).ok().and_then(|v| parse_extra_usage(&v));
-    let force_peak = std::env::var(LIMENT_DEBUG_PEAK_HOURS).is_ok();
+    let peak_hours = std::env::var(LIMENT_DEBUG_PEAK_HOURS).ok().and_then(|v| parse_bool(&v));
 
-    if utilization.is_none() && resets_in.is_none() && tier.is_none() && extra_usage.is_none() && !force_peak {
+    if utilization.is_none()
+      && resets_in.is_none()
+      && tier.is_none()
+      && extra_usage.is_none()
+      && peak_hours.is_none()
+    {
       return None;
     }
 
     log::info!(
       "Debug overrides active: utilization={utilization:?}, resets_in={resets_in:?}, \
-       tier={}, extra_usage={}, force_peak={force_peak}",
+       tier={}, extra_usage={}, peak_hours={peak_hours:?}",
       tier.is_some(),
       extra_usage.is_some(),
     );
@@ -44,9 +49,18 @@ impl DebugProvider {
       resets_in,
       tier,
       extra_usage,
-      force_peak,
+      peak_hours,
     });
   }
+}
+
+/// Parses a permissive boolean: "1"/"true"/"yes"/"on" → true, "0"/"false"/"no"/"off" → false.
+fn parse_bool(s: &str) -> Option<bool> {
+  return match s.trim().to_ascii_lowercase().as_str() {
+    "1" | "true" | "yes" | "on" => Some(true),
+    "0" | "false" | "no" | "off" => Some(false),
+    _ => None,
+  };
 }
 
 /// Parses "name:r,g,b" into a TierInfo.
@@ -106,11 +120,11 @@ impl DataProvider for DebugProvider {
       });
     }
 
-    if self.force_peak {
+    if let Some(is_peak) = self.peak_hours {
       let ends_at = data.peak_hours.as_ref().map(|p| p.ends_at).unwrap_or_else(|| {
         Timestamp::now().checked_add(jiff::SignedDuration::from_secs(3600)).unwrap()
       });
-      data.peak_hours = Some(PeakHoursInfo { is_peak: true, ends_at });
+      data.peak_hours = Some(PeakHoursInfo { is_peak, ends_at });
     }
 
     return Some(data);
