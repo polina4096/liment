@@ -1,6 +1,6 @@
-use objc2::{DefinedClass, MainThreadMarker, rc::Retained, runtime::AnyObject, sel};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
 use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem};
-use objc2_foundation::{NSAttributedString, NSString};
+use objc2_foundation::NSString;
 use strum::IntoEnumIterator as _;
 use tap::Tap as _;
 
@@ -299,43 +299,4 @@ fn quit_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {
   };
   unsafe { item.setTarget(Some(app)) };
   return item;
-}
-
-pub fn build_credits() -> Retained<NSAttributedString> {
-  let mtm = MainThreadMarker::new().expect("Must be on main thread");
-
-  let html = concat!(
-    r#"<div style="text-align: center; font-family: -apple-system; font-size: 11px; color: #888;">"#,
-    "Simple LLM usage limits in your menu bar.<br/>",
-    r#"<a href="https://github.com/polina4096/liment/issues">Issues</a>"#,
-    " &bull; ",
-    r#"<a href="https://github.com/polina4096/liment">Source Code</a>"#,
-    "</div>"
-  );
-
-  let ns_html = NSString::from_str(html);
-  let ns_data: Retained<AnyObject> = unsafe { objc2::msg_send![&ns_html, dataUsingEncoding: 4_usize] };
-
-  let doc_type_key = NSString::from_str("DocumentType");
-  let doc_type_val = NSString::from_str("NSHTML");
-  let opts: Retained<AnyObject> = unsafe {
-    objc2::msg_send![
-      objc2::class!(NSDictionary),
-      dictionaryWithObject: &*doc_type_val,
-      forKey: &*doc_type_key
-    ]
-  };
-
-  let mut doc_attrs: *mut AnyObject = std::ptr::null_mut();
-  let result: Retained<NSAttributedString> = unsafe {
-    objc2::msg_send![
-      mtm.alloc::<NSAttributedString>(),
-      initWithData: &*ns_data,
-      options: &*opts,
-      documentAttributes: &mut doc_attrs,
-      error: std::ptr::null_mut::<*mut AnyObject>()
-    ]
-  };
-
-  return result;
 }

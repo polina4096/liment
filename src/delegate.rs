@@ -8,15 +8,14 @@ use objc2::{
   runtime::{AnyObject, Bool, NSObject},
 };
 use objc2_app_kit::{
-  NSAboutPanelOptionApplicationName, NSAboutPanelOptionApplicationVersion, NSAboutPanelOptionCredits,
-  NSAboutPanelOptionVersion, NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor,
-  NSCompositingOperation, NSFont, NSFontAttributeName, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage,
-  NSRectFillUsingOperation, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+  NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSCompositingOperation, NSFont,
+  NSFontAttributeName, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSRectFillUsingOperation,
+  NSStatusBar, NSStatusItem, NSVariableStatusItemLength, NSWindow,
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
-  NSAttributedString, NSData, NSDictionary, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange,
-  NSRect, NSSize, NSString, NSTimer,
+  NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
+  NSString, NSTimer,
 };
 use strum::IntoEnumIterator as _;
 use tap::Tap;
@@ -53,6 +52,9 @@ pub struct AppDelegateIvars {
 
   /// Auto-updater.
   updater: Updater,
+
+  /// Retained about window (kept alive so it doesn't get deallocated).
+  about_window: RefCell<Option<Retained<NSWindow>>>,
 }
 
 impl AppDelegateIvars {
@@ -127,26 +129,32 @@ define_class!(
     #[unsafe(method(onAbout:))]
     fn on_about(&self, _sender: &AnyObject) {
       let mtm = self.mtm();
-      let app = NSApplication::sharedApplication(mtm);
 
-      let name = NSString::from_str("liment");
-      let app_version = NSString::from_str(env!("CARGO_PKG_VERSION"));
-      let build_version = NSString::from_str(env!("GIT_COMMIT_SHORT"));
-      let credits = views::build_credits();
+      let mut window_ref = self.ivars().about_window.borrow_mut();
+      if let Some(window) = window_ref.as_ref() && window.isVisible() {
+          window.makeKeyAndOrderFront(None);
+          #[allow(deprecated)]
+          NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+          return;
+      }
 
-      let keys: &[&NSString] = &[
-        unsafe { NSAboutPanelOptionApplicationName },
-        unsafe { NSAboutPanelOptionApplicationVersion },
-        unsafe { NSAboutPanelOptionVersion },
-        unsafe { NSAboutPanelOptionCredits },
-      ];
-      let values: &[&AnyObject] = &[&name, &app_version, &build_version, &credits];
-      let options = NSDictionary::from_slices(keys, values);
+      let window = crate::ui::about::build_about_window(mtm, self);
 
       #[allow(deprecated)]
-      app.activateIgnoringOtherApps(true);
+      NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
 
-      unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
+      window.makeKeyAndOrderFront(None);
+      *window_ref = Some(window);
+    }
+
+    #[unsafe(method(onOpenIssues:))]
+    fn on_open_issues(&self, _sender: &AnyObject) {
+      let _ = open::that("https://github.com/polina4096/liment/issues");
+    }
+
+    #[unsafe(method(onOpenSource:))]
+    fn on_open_source(&self, _sender: &AnyObject) {
+      let _ = open::that("https://github.com/polina4096/liment");
     }
 
     #[unsafe(method(onChangeProvider:))]
@@ -211,6 +219,7 @@ impl AppDelegate {
       status_item,
       config: RefCell::new(config),
       updater: Updater::new(),
+      about_window: RefCell::new(None),
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 

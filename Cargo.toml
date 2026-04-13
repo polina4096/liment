@@ -1,5 +1,6 @@
 [package]
 name = "liment"
+description = "Simple LLM usage limits in your tray and menu bar."
 version = "0.1.17"
 edition = "2024"
 
@@ -48,7 +49,7 @@ dispatch2 = { version = "0.3.0" }
 objc2 = { version = "0.6.3" }
 objc2-core-foundation = { version = "0.3.2" }
 objc2-foundation = { version = "0.3.2", features = ["NSAttributedString", "NSData", "NSDictionary", "NSRange", "NSString"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSAlert", "NSAttributedString", "NSButton", "NSColor", "NSControl", "NSCursor", "NSGraphics", "NSImage", "NSImageView", "NSLayoutAnchor", "NSLayoutConstraint", "NSParagraphStyle", "NSResponder", "NSStackView", "NSStatusBarButton", "NSStringDrawing", "NSView", "NSVisualEffectView", "NSWindow", "NSWorkspace", "block2", "objc2-core-foundation"] }
 objc2-quartz-core = { version = "0.3.2", features = ["objc2-core-graphics", "objc2-core-foundation"] }
 objc2-user-notifications = { version = "0.3.2", features = ["UNNotificationContent", "UNNotificationRequest", "UNNotificationSettings", "UNUserNotificationCenter", "bitflags", "block2"] }
 security-framework = { version = "3.6.0" }
