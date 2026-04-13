@@ -1,6 +1,6 @@
-use objc2::{DefinedClass, MainThreadMarker, rc::Retained, sel};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained, runtime::AnyObject, sel};
 use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem};
-use objc2_foundation::NSString;
+use objc2_foundation::{NSAttributedString, NSString};
 use strum::IntoEnumIterator as _;
 use tap::Tap as _;
 
@@ -24,6 +24,8 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
     menu.addItem(&refresh_item(mtm, app));
     menu.addItem(&provider_item(mtm, app, current_provider));
     menu.addItem(&update_item(mtm, app, &UpdateState::Unchecked));
+    menu.addItem(&about_item(mtm, app));
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&open_config_item(mtm, app));
     menu.addItem(&open_logs_item(mtm, app));
     menu.addItem(&quit_item(mtm, app));
@@ -40,13 +42,12 @@ pub fn populate_menu(
   menu.removeAllItems();
 
   // Header with tier badge.
+  let config = app.ivars().config();
+  let version = if config.show_version { Some(concat!("v", env!("CARGO_PKG_VERSION"))) } else { None };
   let header_item = NSMenuItem::new(mtm);
-  let header_view = components::header_row(mtm, "Usage", &profile);
+  let header_view = components::header_row(mtm, "Usage", &profile, version);
   header_item.setView(Some(&header_view));
   menu.addItem(&header_item);
-
-  // Usage windows.
-  let config = app.ivars().config();
 
   for window in &data.windows {
     menu.addItem(&components::bucket_row(mtm, &components::BucketRowParams {
@@ -74,13 +75,15 @@ pub fn populate_menu(
     extra_usage_section(menu, mtm, api_usage);
   }
 
-  // Separator + Update + Refresh + Quit.
+  // Separator + actions + utilities.
   let update_state = app.ivars().update_state();
   let current_provider = app.ivars().provider().kind();
   menu.addItem(&NSMenuItem::separatorItem(mtm));
   menu.addItem(&refresh_item(mtm, app));
   menu.addItem(&provider_item(mtm, app, current_provider));
   menu.addItem(&update_item(mtm, app, &update_state));
+  menu.addItem(&about_item(mtm, app));
+  menu.addItem(&NSMenuItem::separatorItem(mtm));
   menu.addItem(&open_config_item(mtm, app));
   menu.addItem(&open_logs_item(mtm, app));
   menu.addItem(&quit_item(mtm, app));
@@ -272,6 +275,19 @@ pub fn update_provider_item(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDeleg
   }
 }
 
+fn about_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {
+  let item = unsafe {
+    NSMenuItem::initWithTitle_action_keyEquivalent(
+      mtm.alloc::<NSMenuItem>(),
+      &NSString::from_str("About liment"),
+      Some(sel!(onAbout:)),
+      &NSString::new(),
+    )
+  };
+  unsafe { item.setTarget(Some(app)) };
+  return item;
+}
+
 fn quit_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {
   let item = unsafe {
     NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -283,4 +299,43 @@ fn quit_item(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenuItem> {
   };
   unsafe { item.setTarget(Some(app)) };
   return item;
+}
+
+pub fn build_credits() -> Retained<NSAttributedString> {
+  let mtm = MainThreadMarker::new().expect("Must be on main thread");
+
+  let html = concat!(
+    r#"<div style="text-align: center; font-family: -apple-system; font-size: 11px; color: #888;">"#,
+    "Simple LLM usage limits in your menu bar.<br/>",
+    r#"<a href="https://github.com/polina4096/liment/issues">Issues</a>"#,
+    " &bull; ",
+    r#"<a href="https://github.com/polina4096/liment">Source Code</a>"#,
+    "</div>"
+  );
+
+  let ns_html = NSString::from_str(html);
+  let ns_data: Retained<AnyObject> = unsafe { objc2::msg_send![&ns_html, dataUsingEncoding: 4_usize] };
+
+  let doc_type_key = NSString::from_str("DocumentType");
+  let doc_type_val = NSString::from_str("NSHTML");
+  let opts: Retained<AnyObject> = unsafe {
+    objc2::msg_send![
+      objc2::class!(NSDictionary),
+      dictionaryWithObject: &*doc_type_val,
+      forKey: &*doc_type_key
+    ]
+  };
+
+  let mut doc_attrs: *mut AnyObject = std::ptr::null_mut();
+  let result: Retained<NSAttributedString> = unsafe {
+    objc2::msg_send![
+      mtm.alloc::<NSAttributedString>(),
+      initWithData: &*ns_data,
+      options: &*opts,
+      documentAttributes: &mut doc_attrs,
+      error: std::ptr::null_mut::<*mut AnyObject>()
+    ]
+  };
+
+  return result;
 }

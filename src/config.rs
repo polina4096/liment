@@ -47,6 +47,10 @@ pub struct Config {
   /// Whether to show the pacing warning indicator in the tray icon.
   pub show_tray_pacing_warning: bool,
 
+  /// Whether to show the app version in the menu header.
+  #[default = true]
+  pub show_version: bool,
+
   /// Reset time format: "relative" (resets in 3h) or "absolute" (resets on 13 Feb, 14:00).
   #[default(DateTimeFormat::Relative)]
   pub reset_time_format: DateTimeFormat,

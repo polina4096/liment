@@ -8,14 +8,15 @@ use objc2::{
   runtime::{AnyObject, Bool, NSObject},
 };
 use objc2_app_kit::{
-  NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor, NSCompositingOperation, NSFont,
-  NSFontAttributeName, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSRectFillUsingOperation,
-  NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+  NSAboutPanelOptionApplicationName, NSAboutPanelOptionApplicationVersion, NSAboutPanelOptionCredits,
+  NSAboutPanelOptionVersion, NSApplication, NSApplicationDelegate, NSAttributedStringNSStringDrawing, NSColor,
+  NSCompositingOperation, NSFont, NSFontAttributeName, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage,
+  NSRectFillUsingOperation, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
 };
 use objc2_core_foundation::CGPoint;
 use objc2_foundation::{
-  NSAttributedString, NSData, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange, NSRect, NSSize,
-  NSString, NSTimer,
+  NSAttributedString, NSData, NSDictionary, NSMutableAttributedString, NSNotification, NSObjectProtocol, NSRange,
+  NSRect, NSSize, NSString, NSTimer,
 };
 use strum::IntoEnumIterator as _;
 use tap::Tap;
@@ -121,6 +122,31 @@ define_class!(
     #[unsafe(method(onInstallUpdate:))]
     fn on_install_update(&self, _sender: &AnyObject) {
       self.install_update();
+    }
+
+    #[unsafe(method(onAbout:))]
+    fn on_about(&self, _sender: &AnyObject) {
+      let mtm = self.mtm();
+      let app = NSApplication::sharedApplication(mtm);
+
+      let name = NSString::from_str("liment");
+      let app_version = NSString::from_str(env!("CARGO_PKG_VERSION"));
+      let build_version = NSString::from_str(env!("GIT_COMMIT_SHORT"));
+      let credits = views::build_credits();
+
+      let keys: &[&NSString] = &[
+        unsafe { NSAboutPanelOptionApplicationName },
+        unsafe { NSAboutPanelOptionApplicationVersion },
+        unsafe { NSAboutPanelOptionVersion },
+        unsafe { NSAboutPanelOptionCredits },
+      ];
+      let values: &[&AnyObject] = &[&name, &app_version, &build_version, &credits];
+      let options = NSDictionary::from_slices(keys, values);
+
+      #[allow(deprecated)]
+      app.activateIgnoringOtherApps(true);
+
+      unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
     }
 
     #[unsafe(method(onChangeProvider:))]

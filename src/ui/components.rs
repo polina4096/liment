@@ -195,7 +195,12 @@ pub fn progress_row(
   return container;
 }
 
-pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<&TierInfo>) -> Retained<NSView> {
+pub fn header_row(
+  mtm: MainThreadMarker,
+  title: &str,
+  tier: &Option<&TierInfo>,
+  version: Option<&str>,
+) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
   // Title label.
@@ -215,6 +220,28 @@ pub fn header_row(mtm: MainThreadMarker, title: &str, tier: &Option<&TierInfo>) 
     &field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 4.0),
     &container.bottomAnchor().constraintEqualToAnchor_constant(&field.bottomAnchor(), 2.0),
   ]);
+
+  // Version label (right-aligned, small, dim).
+  if let Some(version) = version {
+    let version_field = NSTextField::labelWithString(&NSString::from_str(version), mtm);
+    version_field.noAutoresize();
+    version_field.setEditable(false);
+    version_field.setBezeled(false);
+    version_field.setDrawsBackground(false);
+
+    let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
+    version_field.setFont(Some(&small_font));
+    version_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
+    version_field.setTextColor(Some(&NSColor::tertiaryLabelColor()));
+    container.addSubview(&version_field);
+
+    activate(&[
+      &version_field
+        .trailingAnchor()
+        .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+      &version_field.centerYAnchor().constraintEqualToAnchor(&field.centerYAnchor()),
+    ]);
+  }
 
   // Tier badge.
   if let Some(tier) = tier {
