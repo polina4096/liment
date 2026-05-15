@@ -93,7 +93,9 @@ impl From<UsageResponse> for UsageData {
 
     return UsageData {
       api_usage,
-      peak_hours: Some(compute_claude_peak_hours()),
+      // Peak hours are disabled now.
+      // peak_hours: Some(compute_claude_peak_hours()),
+      peak_hours: None,
       windows,
     };
   }
