@@ -38,6 +38,9 @@ pub struct Config {
   #[default(DisplayMode::Usage)]
   pub display_mode: DisplayMode,
 
+  /// Which usage windows to show in the tray, by short label (e.g. ["5h"] or ["7d", "5h"]). Empty = first two available. At most two are used.
+  pub tray_windows: Vec<String>,
+
   /// Whether to show period percentage next to "resets in".
   pub show_period_percentage: bool,
 

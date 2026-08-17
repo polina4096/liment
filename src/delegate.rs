@@ -25,7 +25,7 @@ use crate::{
   config::{Config, DisplayMode},
   constants::LIMENT_DEBUG_REFETCH_INTERVAL,
   profile_cache::ProfileCache,
-  providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, debug::DebugProvider},
+  providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, UsageWindow, debug::DebugProvider},
   ui::views,
   updater::{self, UpdateState, Updater},
   utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
@@ -36,6 +36,9 @@ struct TrayBucket<'a> {
   utilization: f64,
   warn: bool,
 }
+
+/// How many usage lines fit next to the tray logo.
+const TRAY_MAX_LINES: usize = 2;
 
 pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
@@ -405,21 +408,25 @@ impl AppDelegate {
     let Some(data) = data
     else {
       if let Some(tray_button) = status_item.button(mtm) {
-        let img = Self::build_tray_image(
-          tray_icon_svg,
-          TrayBucket {
-            text: "-- --",
-            utilization: 0.0,
-            warn: false,
-          },
-          TrayBucket {
-            text: "-- --",
-            utilization: 0.0,
-            warn: false,
-          },
-          config.monochrome_icon,
-          config.stats_colors,
-        );
+        let line_count = if config.tray_windows.is_empty() {
+          TRAY_MAX_LINES
+        }
+        else {
+          config.tray_windows.len().min(TRAY_MAX_LINES)
+        };
+
+        // A single window is stacked (label over value), so its placeholder is stacked too.
+        let texts: &[&str] = if line_count == 1 { &["--", "--%"] } else { &["-- --", "-- --"] };
+
+        let buckets: Vec<TrayBucket> = texts
+          .iter()
+          .map(|text| {
+            return TrayBucket { text, utilization: 0.0, warn: false };
+          })
+          .collect();
+
+        let img =
+          Self::build_tray_image(tray_icon_svg, &buckets, line_count == 1, config.monochrome_icon, config.stats_colors);
 
         tray_button.setImage(Some(&img));
       }
@@ -427,46 +434,65 @@ impl AppDelegate {
     };
 
     if let Some(tray_button) = status_item.button(mtm) {
-      // Use first two windows that have a short_title for tray display.
-      let mut tray_windows = data.windows.iter().filter(|w| w.short_title.is_some());
-      let w0 = tray_windows.next();
-      let w1 = tray_windows.next();
+      let tray_windows = Self::select_tray_windows(&data.windows, &config.tray_windows);
       let is_remaining = config.display_mode == DisplayMode::Remaining;
-      let u0 = w0.map(|w| w.utilization).unwrap_or(0.0);
-      let u1 = w1.map(|w| w.utilization).unwrap_or(0.0);
-      let p0 = if is_remaining { 100.0 - u0 } else { u0 };
-      let p1 = if is_remaining { 100.0 - u1 } else { u1 };
 
-      let v0 = p0 as i64;
-      let v1 = p1 as i64;
-      let w = (v0.max(1).ilog10() as usize + 1).max(v1.max(1).ilog10() as usize + 1);
+      let values: Vec<i64> = tray_windows
+        .iter()
+        .map(|w| {
+          let pct = if is_remaining { 100.0 - w.utilization } else { w.utilization };
+          return pct as i64;
+        })
+        .collect();
 
-      let label0 = w0.and_then(|w| w.short_title.as_deref()).unwrap_or("--");
-      let label1 = w1.and_then(|w| w.short_title.as_deref()).unwrap_or("--");
-      let line1 = format!("{} {:>w$}%", label0, v0);
-      let line2 = format!("{} {:>w$}%", label1, v1);
+      let width = values.iter().map(|v| v.max(&1).ilog10() as usize + 1).max().unwrap_or(1);
+
+      // A single window is rendered stacked ("5h" over "94%") to keep the tray narrow;
+      // several windows get one "label value" line each.
+      let stacked = tray_windows.len() == 1;
+
+      let lines: Vec<String> = if stacked {
+        vec![
+          tray_windows[0].short_title.clone().unwrap_or_else(|| "--".to_string()),
+          format!("{}%", values[0]),
+        ]
+      }
+      else {
+        tray_windows
+          .iter()
+          .zip(&values)
+          .map(|(w, v)| {
+            return format!("{} {:>width$}%", w.short_title.as_deref().unwrap_or("--"), v);
+          })
+          .collect()
+      };
 
       let tray_warn_enabled = config.show_tray_pacing_warning;
-      let warn0 = tray_warn_enabled && w0.is_some_and(|w| w.is_pacing_warning());
-      let warn1 = tray_warn_enabled && w1.is_some_and(|w| w.is_pacing_warning());
+      let buckets: Vec<TrayBucket> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+          // Stacked mode draws one window across two lines, so both take its color and the
+          // warning sits on the value line.
+          let window = if stacked { tray_windows[0] } else { tray_windows[i] };
+          let warn = tray_warn_enabled && window.is_pacing_warning() && (!stacked || i == 1);
 
-      let u0 = u0 / 100.0;
-      let u1 = u1 / 100.0;
-      let img = Self::build_tray_image(
-        tray_icon_svg,
-        TrayBucket {
-          text: &line1,
-          utilization: u0,
-          warn: warn0,
-        },
-        TrayBucket {
-          text: &line2,
-          utilization: u1,
-          warn: warn1,
-        },
-        config.monochrome_icon,
-        config.stats_colors,
-      );
+          return TrayBucket {
+            text: line,
+            utilization: window.utilization / 100.0,
+            warn,
+          };
+        })
+        .collect();
+
+      let placeholder = [TrayBucket {
+        text: "-- --",
+        utilization: 0.0,
+        warn: false,
+      }];
+      let buckets = if buckets.is_empty() { &placeholder[..] } else { &buckets[..] };
+
+      let img = Self::build_tray_image(tray_icon_svg, buckets, stacked, config.monochrome_icon, config.stats_colors);
 
       tray_button.setImage(Some(&img));
     }
@@ -480,9 +506,34 @@ impl AppDelegate {
     views::populate_menu(&menu, mtm, self, data, profile);
   }
 
-  /// Builds a two-line attributed string with per-line colors.
-  fn build_attributed_line(text: &str, p: f64, stats_colors: bool) -> Retained<NSAttributedString> {
-    let font = NSFont::monospacedSystemFontOfSize_weight(9.0, unsafe { NSFontWeightSemibold });
+  /// Picks the usage windows shown in the tray, honoring the `tray_windows` config list
+  /// (matched against `short_title`, order preserved). Labels that don't resolve are skipped;
+  /// if none of them do, falls back to the first available windows.
+  fn select_tray_windows<'a>(windows: &'a [UsageWindow], wanted: &[String]) -> Vec<&'a UsageWindow> {
+    let available = || return windows.iter().filter(|w| w.short_title.is_some());
+
+    if !wanted.is_empty() {
+      let picked: Vec<&UsageWindow> = wanted
+        .iter()
+        .take(TRAY_MAX_LINES)
+        .filter_map(|label| {
+          return available().find(|w| w.short_title.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(label)));
+        })
+        .collect();
+
+      if !picked.is_empty() {
+        return picked;
+      }
+
+      log::warn!("None of the configured tray_windows {wanted:?} matched, falling back to defaults");
+    }
+
+    return available().take(TRAY_MAX_LINES).collect();
+  }
+
+  /// Builds a single tray line as an attributed string colored by utilization.
+  fn build_attributed_line(text: &str, p: f64, font_size: f64, stats_colors: bool) -> Retained<NSAttributedString> {
+    let font = NSFont::monospacedSystemFontOfSize_weight(font_size, unsafe { NSFontWeightSemibold });
     let str = NSString::from_str(text);
 
     let attr = unsafe { NSAttributedString::initWithString_attributes(NSAttributedString::alloc(), &str, None) };
@@ -507,44 +558,43 @@ impl AppDelegate {
   /// dim the content on inactive displays via menu bar compositing.
   fn build_tray_image(
     icon_svg: &'static [u8],
-    bucket1: TrayBucket,
-    bucket2: TrayBucket,
+    buckets: &[TrayBucket],
+    stacked: bool,
     monochrome_icon: bool,
     stats_colors: bool,
   ) -> Retained<NSImage> {
-    let TrayBucket {
-      text: line1,
-      utilization: p1,
-      warn: warn1,
-    } = bucket1;
-    let TrayBucket {
-      text: line2,
-      utilization: p2,
-      warn: warn2,
-    } = bucket2;
+    // Two lines have to squeeze into the ~22pt menu bar, so they use a small font; a single
+    // line gets the whole row and is sized close to the regular menu bar text instead.
+    let single_line = buckets.len() <= 1;
+    let (font_size, line_height) = if single_line { (12.5_f64, 15.0_f64) } else { (9.0_f64, 10.0_f64) };
+    let warn_font_size = if single_line { 13.0 } else { 11.0 };
 
-    let attr1 = Self::build_attributed_line(line1, p1, stats_colors);
-    let attr2 = Self::build_attributed_line(line2, p2, stats_colors);
+    let attrs: Vec<Retained<NSAttributedString>> = buckets
+      .iter()
+      .map(|b| Self::build_attributed_line(b.text, b.utilization, font_size, stats_colors))
+      .collect();
 
     // Pre-build the warning character once if any line needs it; we use its measured size
     // to reserve space in the tray image layout and draw it in the block.
+    let any_warn = buckets.iter().any(|b| b.warn);
     let warn_attr: Option<Retained<NSAttributedString>> =
-      if warn1 || warn2 { Some(Self::build_warning_char()) } else { None };
+      if any_warn { Some(Self::build_warning_char(warn_font_size)) } else { None };
     let warn_size = warn_attr.as_ref().map(|a| a.size()).unwrap_or(NSSize::new(0.0, 0.0));
     let warn_width = warn_size.width;
     let warn_height = warn_size.height;
 
-    let size1 = attr1.size();
-    let size2 = attr2.size();
-
     const TRI_PADDING: f64 = 6.0;
-    let tri_extra_1 = if warn1 { TRI_PADDING + warn_width } else { 0.0 };
-    let tri_extra_2 = if warn2 { TRI_PADDING + warn_width } else { 0.0 };
+    let line_widths: Vec<f64> = attrs.iter().map(|a| a.size().width).collect();
 
     // Find longest line width (text + optional trailing warning glyph).
-    let text_width = (size1.width + tri_extra_1).max(size2.width + tri_extra_2).ceil();
-    let line_height = 10.0_f64;
-    let text_height = line_height * 2.0;
+    let block_widths: Vec<f64> = line_widths
+      .iter()
+      .zip(buckets)
+      .map(|(w, b)| return w + if b.warn { TRI_PADDING + warn_width } else { 0.0 })
+      .collect();
+    let text_width = block_widths.iter().fold(0.0_f64, |acc, w| return acc.max(*w)).ceil();
+
+    let line_count = attrs.len().max(1) as f64;
 
     // Logo size and padding.
     let logo_size = 14.0_f64;
@@ -553,8 +603,10 @@ impl AppDelegate {
     // Offset for text: logo width + x padding.
     let text_x = logo_size + logo_padding;
 
-    // Total button image size.
-    let (width, height) = (text_x + text_width, text_height);
+    // Total button image size. A single line is shorter than the logo, so the image keeps
+    // the logo height as a floor and the text block is centered inside it.
+    let (width, height) = (text_x + text_width, (line_height * line_count).max(logo_size));
+    let text_bottom = (height - line_height * line_count) / 2.0;
     let image_size = NSSize::new(width, height);
 
     // Load provider logo from embedded SVG.
@@ -563,8 +615,7 @@ impl AppDelegate {
 
     logo_img.setSize(NSSize::new(logo_size, logo_size));
 
-    let size1_width = size1.width;
-    let size2_width = size2.width;
+    let warn_flags: Vec<bool> = buckets.iter().map(|b| b.warn).collect();
 
     // If the warn glyph box is taller than a single line row, push the top-line draw point
     // down by half the overhang. The other half of the overflow sits in the glyph's empty
@@ -585,18 +636,18 @@ impl AppDelegate {
         NSRectFillUsingOperation(logo_rect, NSCompositingOperation::SourceIn);
       }
 
-      // Draw text lines to the right of the logo.
-      attr1.drawAtPoint(CGPoint::new(text_x, line_height));
-      attr2.drawAtPoint(CGPoint::new(text_x, 0.0));
+      // Draw text lines to the right of the logo, top to bottom. Stacked lines are centered
+      // against each other, inline ones are left-aligned (their columns already line up).
+      for (i, attr) in attrs.iter().enumerate() {
+        let y = text_bottom + (attrs.len() - 1 - i) as f64 * line_height;
+        let x = if stacked { text_x + (text_width - block_widths[i]) / 2.0 } else { text_x };
+        attr.drawAtPoint(CGPoint::new(x, y));
 
-      // Draw a yellow warning glyph at the end of each line that needs one. The top line is
-      // shifted down by the warn glyph's vertical overhang so its top edge fits in the image.
-      if let Some(wa) = warn_attr.as_ref() {
-        if warn1 {
-          wa.drawAtPoint(CGPoint::new(text_x + size1_width + TRI_PADDING, line_height - warn_y_overhang));
-        }
-        if warn2 {
-          wa.drawAtPoint(CGPoint::new(text_x + size2_width + TRI_PADDING, 0.0));
+        // Draw a yellow warning glyph at the end of each line that needs one. The top line is
+        // shifted down by the warn glyph's vertical overhang so its top edge fits in the image.
+        if let (Some(wa), true) = (warn_attr.as_ref(), warn_flags[i]) {
+          let shift = if i == 0 { warn_y_overhang } else { 0.0 };
+          wa.drawAtPoint(CGPoint::new(x + line_widths[i] + TRI_PADDING, y - shift));
         }
       }
 
@@ -610,8 +661,8 @@ impl AppDelegate {
 
   /// Builds a yellow, bold `⚠` attributed string used as the pacing-warning indicator
   /// next to a tray line.
-  fn build_warning_char() -> Retained<NSAttributedString> {
-    let font = NSFont::systemFontOfSize_weight(11.0, unsafe { NSFontWeightSemibold });
+  fn build_warning_char(font_size: f64) -> Retained<NSAttributedString> {
+    let font = NSFont::systemFontOfSize_weight(font_size, unsafe { NSFontWeightSemibold });
     let str = NSString::from_str("⚠");
 
     let attr = unsafe { NSAttributedString::initWithString_attributes(NSAttributedString::alloc(), &str, None) };
