@@ -62,6 +62,10 @@ pub fn populate_menu(
     }));
   }
 
+  for detail in &data.details {
+    add_kv_row(menu, mtm, &detail.label, &detail.value);
+  }
+
   // Peak hours indicator (under all usages, above the separator).
   if let Some(peak) = &data.peak_hours {
     let peak_item = NSMenuItem::new(mtm);

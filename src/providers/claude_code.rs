@@ -11,7 +11,7 @@ use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 
 use super::{DataProvider, PeakHoursInfo, ProviderKind, UsageData};
-use crate::providers::{ApiUsage, TierInfo, UsageWindow};
+use crate::providers::{ApiUsage, TierInfo, UsageWindow, backoff::Backoff};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ClaudeCodeSettings {
@@ -144,6 +144,7 @@ impl From<UsageResponse> for UsageData {
       // peak_hours: Some(compute_claude_peak_hours()),
       peak_hours: None,
       windows,
+      details: Vec::new(),
     };
   }
 }
@@ -239,7 +240,7 @@ impl std::fmt::Display for SubscriptionTier {
 
 pub struct ClaudeCodeProvider {
   token: Mutex<TokenState>,
-  backoff: Mutex<BackoffState>,
+  backoff: Backoff,
   /// Whether keychain reads (including token refreshes) go through the `security` CLI.
   cli_keychain: bool,
   /// Organization UUID, lazily populated from the first profile fetch.
@@ -254,11 +255,6 @@ struct TokenState {
   expires_at: Option<Timestamp>,
 }
 
-struct BackoffState {
-  retry_after: Option<Instant>,
-  consecutive_failures: u32,
-}
-
 #[derive(Default)]
 struct OverageGrantCache {
   grant: Option<OverageCreditGrant>,
@@ -271,14 +267,9 @@ impl ClaudeCodeProvider {
 
     let token = Self::fetch_token(settings, cli_keychain)?;
 
-    let backoff = Mutex::new(BackoffState {
-      retry_after: None,
-      consecutive_failures: 0,
-    });
-
     return Ok(Self {
       token: Mutex::new(token),
-      backoff,
+      backoff: Backoff::new(),
       cli_keychain,
       org_uuid: Mutex::new(None),
       overage_grant: Mutex::new(OverageGrantCache::default()),
@@ -433,19 +424,8 @@ impl ClaudeCodeProvider {
   }
 
   fn get(&self, url: &str) -> Option<String> {
-    // Check if we're in a backoff period
-    {
-      let backoff = self.backoff.lock().unwrap();
-      if let Some(retry_after) = backoff.retry_after
-        && Instant::now() < retry_after
-      {
-        log::debug!(
-          "Skipping request to {} (rate limit backoff, {}s remaining)",
-          url,
-          (retry_after - Instant::now()).as_secs()
-        );
-        return None;
-      }
+    if self.backoff.should_skip(url) {
+      return None;
     }
 
     // Proactive expiry check: if the current token is known to have expired,
@@ -498,11 +478,7 @@ impl ClaudeCodeProvider {
     }
 
     if let Err(ureq::Error::StatusCode(429)) = &result {
-      let mut backoff = self.backoff.lock().unwrap();
-      backoff.consecutive_failures += 1;
-      let delay_secs = 60u64 * (1 << backoff.consecutive_failures.min(4));
-      backoff.retry_after = Some(Instant::now() + std::time::Duration::from_secs(delay_secs));
-      log::warn!("Rate limited (429), backing off for {}s", delay_secs);
+      self.backoff.note_rate_limited();
       return None;
     }
 
@@ -510,14 +486,8 @@ impl ClaudeCodeProvider {
       log::error!("Request failed for {}: {}", url, e);
     }
 
-    // Reset backoff on success
     if result.is_ok() {
-      let mut backoff = self.backoff.lock().unwrap();
-      if backoff.consecutive_failures > 0 {
-        log::info!("Request succeeded, resetting backoff");
-        backoff.consecutive_failures = 0;
-        backoff.retry_after = None;
-      }
+      self.backoff.note_success();
     }
 
     return result.ok();
