@@ -1,7 +1,8 @@
 use jiff::Timestamp;
 use objc2::{MainThreadMarker, Message, rc::Retained};
 use objc2_app_kit::{
-  NSColor, NSFont, NSLayoutConstraint, NSMenuItem, NSProgressIndicator, NSProgressIndicatorStyle, NSTextField, NSView,
+  NSColor, NSFont, NSLayoutConstraint, NSLayoutConstraintOrientation, NSLayoutPriorityDefaultLow, NSLineBreakMode,
+  NSMenuItem, NSProgressIndicator, NSProgressIndicatorStyle, NSTextField, NSView,
 };
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::{NSArray, NSString};
@@ -38,6 +39,17 @@ fn activate(constraints: &[&NSLayoutConstraint]) {
   let array = NSArray::from_retained_slice(&constraints.iter().map(|c| c.retain()).collect::<Vec<_>>());
 
   return NSLayoutConstraint::activateConstraints(&array);
+}
+
+fn make_label(mtm: MainThreadMarker, text: &str, font: &NSFont) -> Retained<NSTextField> {
+  let field = NSTextField::labelWithString(&NSString::from_str(text), mtm);
+  field.noAutoresize();
+  field.setEditable(false);
+  field.setBezeled(false);
+  field.setDrawsBackground(false);
+  field.setFont(Some(font));
+
+  return field;
 }
 
 /// Resolves Auto Layout constraints and updates the container's frame.
@@ -126,39 +138,60 @@ pub fn progress_row(
 ) -> Retained<NSView> {
   let container = NSView::init(mtm.alloc::<NSView>());
 
-  // Label: "5h Limit  8%".
-  let label_text = format!("{}  {}%", label, utilization as i64);
-  let label_field = NSTextField::labelWithString(&NSString::from_str(&label_text), mtm);
-  label_field.noAutoresize();
-  label_field.setEditable(false);
-  label_field.setBezeled(false);
-  label_field.setDrawsBackground(false);
-
   let font = NSFont::systemFontOfSize_weight(12.0, font_weight_regular());
-  label_field.setFont(Some(&font));
+
+  // Label: "5h Limit", truncated with an ellipsis when the row runs out of space.
+  let label_field = make_label(mtm, label, &font);
+  label_field.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+  label_field.setContentCompressionResistancePriority_forOrientation(
+    NSLayoutPriorityDefaultLow,
+    NSLayoutConstraintOrientation::Horizontal,
+  );
   container.addSubview(&label_field);
+
+  // Utilization percentage, always kept intact next to the label.
+  let value_field = make_label(mtm, &format!("{}%", utilization as i64), &font);
+  container.addSubview(&value_field);
+
+  activate(&[
+    &value_field.firstBaselineAnchor().constraintEqualToAnchor(&label_field.firstBaselineAnchor()),
+    &value_field.leadingAnchor().constraintEqualToAnchor_constant(&label_field.trailingAnchor(), 6.0),
+    &value_field
+      .trailingAnchor()
+      .constraintLessThanOrEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
+  ]);
+
+  // Tooltip with the untruncated row text, set on every hovered subview since tooltips
+  // are not inherited from the superview.
+  let tooltip = match reset_str {
+    Some(reset_str) => format!("{}  {}% · {}", label, utilization as i64, reset_str),
+    None => format!("{}  {}%", label, utilization as i64),
+  };
+  let tooltip = NSString::from_str(&tooltip);
+  container.setToolTip(Some(&tooltip));
+  label_field.setToolTip(Some(&tooltip));
+  value_field.setToolTip(Some(&tooltip));
 
   // Reset time label (right-aligned), only if reset info is available.
   if let Some(reset_str) = reset_str {
-    let reset_field = NSTextField::labelWithString(&NSString::from_str(reset_str), mtm);
-    reset_field.noAutoresize();
-    reset_field.setEditable(false);
-    reset_field.setBezeled(false);
-    reset_field.setDrawsBackground(false);
-
     let small_font = NSFont::systemFontOfSize_weight(10.0, font_weight_light());
-    reset_field.setFont(Some(&small_font));
+    let reset_field = make_label(mtm, reset_str, &small_font);
     reset_field.setAlignment(objc2_app_kit::NSTextAlignment::Right);
     let default_color = NSColor::secondaryLabelColor();
     let color = reset_color.unwrap_or(&default_color);
     reset_field.setTextColor(Some(color));
+    reset_field.setToolTip(Some(&tooltip));
     container.addSubview(&reset_field);
 
     activate(&[
-      // Reset label: same row as label, right-aligned.
+      // Reset label: same row as label, right-aligned after the percentage.
       &reset_field.topAnchor().constraintEqualToAnchor(&label_field.topAnchor()),
-      &reset_field.leadingAnchor().constraintEqualToAnchor(&label_field.leadingAnchor()),
-      &reset_field.trailingAnchor().constraintEqualToAnchor(&label_field.trailingAnchor()),
+      &reset_field
+        .leadingAnchor()
+        .constraintGreaterThanOrEqualToAnchor_constant(&value_field.trailingAnchor(), 8.0),
+      &reset_field
+        .trailingAnchor()
+        .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
     ]);
   }
 
@@ -175,12 +208,9 @@ pub fn progress_row(
   activate(&[
     // Container width.
     &container.widthAnchor().constraintEqualToConstant(MENU_WIDTH),
-    // Label row: top, leading, trailing.
+    // Label row: top, leading.
     &label_field.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), 6.0),
     &label_field.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),
-    &label_field
-      .trailingAnchor()
-      .constraintEqualToAnchor_constant(&container.trailingAnchor(), -H_PADDING),
     // Progress bar: below label, pinned to sides.
     &progress.topAnchor().constraintEqualToAnchor_constant(&label_field.bottomAnchor(), 2.0),
     &progress.leadingAnchor().constraintEqualToAnchor_constant(&container.leadingAnchor(), H_PADDING),

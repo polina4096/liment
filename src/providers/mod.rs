@@ -9,12 +9,15 @@ use crate::{
   providers::{
     claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
     cliproxy::{CliproxyClaudeProvider, CliproxyClaudeSettings, CliproxyCodexProvider, CliproxyCodexSettings},
+    codex::{CodexProvider, CodexSettings},
   },
   utils::notification,
 };
 
+pub mod backoff;
 pub mod claude_code;
 pub mod cliproxy;
+pub mod codex;
 pub mod debug;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, strum::Display, strum::EnumIter)]
@@ -22,6 +25,8 @@ pub mod debug;
 pub enum ProviderKind {
   #[strum(to_string = "Claude Code")]
   ClaudeCode,
+  #[strum(to_string = "Codex")]
+  Codex,
   #[strum(to_string = "Cliproxy Claude")]
   CliproxyClaude,
   #[strum(to_string = "Cliproxy Codex")]
@@ -33,6 +38,7 @@ pub enum ProviderKind {
 #[derive(Deserialize, Serialize, Default)]
 pub struct ProviderSettings {
   pub claude_code: Option<ClaudeCodeSettings>,
+  pub codex: Option<CodexSettings>,
   pub cliproxy_claude: Option<CliproxyClaudeSettings>,
   pub cliproxy_codex: Option<CliproxyCodexSettings>,
 }
@@ -57,6 +63,14 @@ pub struct UsageData {
 
   /// Usage windows (e.g. 5h limit, 7d limit).
   pub windows: Vec<UsageWindow>,
+
+  /// Extra provider-specific rows shown under the usage windows.
+  pub details: Vec<UsageDetail>,
+}
+
+pub struct UsageDetail {
+  pub label: String,
+  pub value: String,
 }
 
 pub struct ApiUsage {
@@ -161,6 +175,12 @@ impl ProviderKind {
         let settings = settings.claude_code.clone().unwrap_or_default();
 
         return Ok(Arc::new(ClaudeCodeProvider::new(&settings, cli_keychain)?));
+      }
+
+      ProviderKind::Codex => {
+        let settings = settings.codex.clone().unwrap_or_default();
+
+        return Ok(Arc::new(CodexProvider::new(&settings)?));
       }
 
       ProviderKind::CliproxyClaude => {

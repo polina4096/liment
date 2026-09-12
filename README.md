@@ -23,6 +23,24 @@ provider = "claude_code"
 token = "sk-ant-..."
 ```
 
+### Codex
+
+Uses the ChatGPT token from `~/.codex/auth.json` (written by `codex login`). No extra configuration needed.
+
+```toml
+provider = "codex"
+```
+
+Optionally, you can provide the token and account id manually:
+
+```toml
+provider = "codex"
+
+[settings.codex]
+token = "eyJ..."
+account_id = "e0204854-c988-4e72-9edc-6bb0d1c35e9b"
+```
+
 ### CLIProxy Claude
 
 Proxies requests through a [CLIProxy](https://github.com/nicholasgasior/cliproxy) instance.

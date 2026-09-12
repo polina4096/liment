@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use color_eyre::eyre::Result;
-use jiff::Timestamp;
-use rgb::Rgb;
 use serde::{Deserialize, Serialize};
 
 use super::CliproxyClient;
-use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageWindow};
+use crate::providers::{
+  DataProvider, ProviderKind, TierInfo, UsageData,
+  codex::{USAGE_URL, USER_AGENT, UsageResponse},
+};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CliproxyCodexSettings {
@@ -39,63 +40,6 @@ struct AuthFile {
 #[derive(Debug, Deserialize)]
 struct AuthIdToken {
   chatgpt_account_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Clone, Copy, strum::EnumIter)]
-#[serde(rename_all = "lowercase")]
-enum SubscriptionTier {
-  Free,
-  Plus,
-  Pro,
-  Team,
-  Enterprise,
-}
-
-impl SubscriptionTier {
-  fn tier_info(&self) -> TierInfo {
-    return TierInfo {
-      name: self.to_string(),
-      color: match self {
-        SubscriptionTier::Free => Rgb::new(140, 140, 155),
-        SubscriptionTier::Plus => Rgb::new(90, 145, 210),
-        SubscriptionTier::Pro => Rgb::new(75, 175, 155),
-        SubscriptionTier::Team => Rgb::new(185, 135, 90),
-        SubscriptionTier::Enterprise => Rgb::new(130, 115, 180),
-      },
-    };
-  }
-}
-
-impl std::fmt::Display for SubscriptionTier {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    return match self {
-      SubscriptionTier::Free => write!(f, "Free"),
-      SubscriptionTier::Plus => write!(f, "Plus"),
-      SubscriptionTier::Pro => write!(f, "Pro"),
-      SubscriptionTier::Team => write!(f, "Team"),
-      SubscriptionTier::Enterprise => write!(f, "Enterprise"),
-    };
-  }
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageResponse {
-  plan_type: Option<SubscriptionTier>,
-  rate_limit: Option<RateLimit>,
-  code_review_rate_limit: Option<RateLimit>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RateLimit {
-  primary_window: Option<UsageBucket>,
-  secondary_window: Option<UsageBucket>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UsageBucket {
-  used_percent: f64,
-  limit_window_seconds: i64,
-  reset_at: i64,
 }
 
 impl CliproxyCodexProvider {
@@ -139,10 +83,10 @@ impl CliproxyCodexProvider {
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer $TOKEN$".to_string());
     headers.insert("Content-Type".to_string(), "application/json".to_string());
-    headers.insert("User-Agent".to_string(), "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal".to_string());
+    headers.insert("User-Agent".to_string(), USER_AGENT.to_string());
     headers.insert("Chatgpt-Account-Id".to_string(), chatgpt_account_id);
 
-    let body = self.client.api_get(&self.auth_index, "https://chatgpt.com/backend-api/wham/usage", headers)?;
+    let body = self.client.api_get(&self.auth_index, USAGE_URL, headers)?;
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed codex usage: {:?}", u))
@@ -157,58 +101,7 @@ impl DataProvider for CliproxyCodexProvider {
   }
 
   fn fetch_data(&self) -> Option<UsageData> {
-    let usage = self.fetch_usage()?;
-    let mut windows = Vec::new();
-
-    if let Some(rate_limit) = &usage.rate_limit {
-      if let Some(primary) = &rate_limit.primary_window {
-        windows.push(UsageWindow {
-          title: "5h Limit".to_string(),
-          short_title: Some("5h".to_string()),
-          utilization: primary.used_percent,
-          resets_at: Timestamp::from_second(primary.reset_at).ok(),
-          period_seconds: Some(primary.limit_window_seconds),
-        });
-      }
-
-      if let Some(secondary) = &rate_limit.secondary_window {
-        windows.push(UsageWindow {
-          title: "7d Limit".to_string(),
-          short_title: Some("7d".to_string()),
-          utilization: secondary.used_percent,
-          resets_at: Timestamp::from_second(secondary.reset_at).ok(),
-          period_seconds: Some(secondary.limit_window_seconds),
-        });
-      }
-    }
-
-    if let Some(code_review) = &usage.code_review_rate_limit {
-      if let Some(primary) = &code_review.primary_window {
-        windows.push(UsageWindow {
-          title: "Review 7d".to_string(),
-          short_title: None,
-          utilization: primary.used_percent,
-          resets_at: Timestamp::from_second(primary.reset_at).ok(),
-          period_seconds: Some(primary.limit_window_seconds),
-        });
-      }
-
-      if let Some(secondary) = &code_review.secondary_window {
-        windows.push(UsageWindow {
-          title: "Review 2".to_string(),
-          short_title: None,
-          utilization: secondary.used_percent,
-          resets_at: Timestamp::from_second(secondary.reset_at).ok(),
-          period_seconds: Some(secondary.limit_window_seconds),
-        });
-      }
-    }
-
-    return Some(UsageData {
-      api_usage: None,
-      peak_hours: None,
-      windows,
-    });
+    return Some(self.fetch_usage()?.into());
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
