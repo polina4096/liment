@@ -29,8 +29,8 @@ impl std::fmt::Display for HttpError {
 
 impl std::error::Error for HttpError {}
 
-/// HTTP client for one rate-limited API: wraps a ureq agent with exponential backoff so
-/// callers never have to check for 429s or remember to reset it on success.
+/// HTTP client for one rate-limited API: wraps a ureq agent with exponential backoff
+/// so callers never have to check for 429s or remember to reset it on success.
 pub struct Client {
   agent: ureq::Agent,
   backoff: Mutex<Backoff>,
@@ -48,9 +48,11 @@ impl Client {
   pub fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<String, HttpError> {
     return self.send(url, |agent| {
       let mut request = agent.get(url);
+
       for (name, value) in headers {
         request = request.header(*name, *value);
       }
+
       return request.call();
     });
   }
@@ -59,9 +61,11 @@ impl Client {
   pub fn post_json(&self, url: &str, headers: &[(&str, &str)], body: &str) -> Result<String, HttpError> {
     return self.send(url, |agent| {
       let mut request = agent.post(url).header("Content-Type", "application/json");
+
       for (name, value) in headers {
         request = request.header(*name, *value);
       }
+
       return request.send(body);
     });
   }
@@ -120,7 +124,14 @@ impl Backoff {
 
   fn note_rate_limited(&mut self) {
     self.consecutive_failures += 1;
-    let delay = Duration::from_secs(60 * (1u64 << self.consecutive_failures.min(4)));
+
+    const BACKOFF_BASE: Duration = Duration::from_secs(60);
+    const BACKOFF_MAX_EXPONENT: u32 = 4;
+
+    // Exponential backoff: 2, 4, 8, 16 minutes, then stays at 16.
+    let exponent = self.consecutive_failures.min(BACKOFF_MAX_EXPONENT);
+    let delay = BACKOFF_BASE * 2u32.pow(exponent);
+
     self.retry_after = Some(Instant::now() + delay);
 
     log::warn!("Rate limited (429), backing off for {}s", delay.as_secs());

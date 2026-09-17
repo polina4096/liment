@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use super::CliproxyClient;
 use crate::providers::{
-  DataProvider, ProviderKind, TierInfo, UsageData,
-  claude_code::{ProfileResponse, UsageResponse},
+  DataProvider, ProviderKind, Tier, UsageData,
+  claude::{ANTHROPIC_BETA, PROFILE_URL, ProfileResponse, USAGE_URL, USER_AGENT, UsageResponse},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -39,7 +39,7 @@ impl CliproxyClaudeProvider {
   fn fetch_usage(&self) -> Option<UsageResponse> {
     log::debug!("Fetching usage data");
 
-    let body = self.api_get("https://api.anthropic.com/api/oauth/usage")?;
+    let body = self.api_get(USAGE_URL)?;
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed usage: {:?}", u))
@@ -47,10 +47,10 @@ impl CliproxyClaudeProvider {
       .ok();
   }
 
-  fn fetch_profile_response(&self) -> Option<ProfileResponse> {
+  fn fetch_profile(&self) -> Option<ProfileResponse> {
     log::debug!("Fetching profile data");
 
-    let body = self.api_get("https://api.anthropic.com/api/oauth/profile")?;
+    let body = self.api_get(PROFILE_URL)?;
 
     return serde_json::from_str(&body)
       .inspect(|p: &ProfileResponse| log::debug!("Parsed profile: {:?}", p))
@@ -61,8 +61,8 @@ impl CliproxyClaudeProvider {
   fn api_get(&self, url: &str) -> Option<String> {
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer $TOKEN$".to_string());
-    headers.insert("Anthropic-Beta".to_string(), "oauth-2025-04-20".to_string());
-    headers.insert("User-Agent".to_string(), "claude-code/2.1.71".to_string());
+    headers.insert("Anthropic-Beta".to_string(), ANTHROPIC_BETA.to_string());
+    headers.insert("User-Agent".to_string(), USER_AGENT.to_string());
 
     return self.client.api_get(&self.auth_index, url, headers);
   }
@@ -77,8 +77,8 @@ impl DataProvider for CliproxyClaudeProvider {
     return Some(self.fetch_usage()?.into());
   }
 
-  fn fetch_profile(&self) -> Option<TierInfo> {
-    return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
+  fn fetch_tier(&self) -> Option<Tier> {
+    return self.fetch_profile().map(|p| p.organization.rate_limit_tier.tier());
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

@@ -8,7 +8,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-  providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageDetail, UsageWindow},
+  providers::{DataProvider, ProviderKind, Tier, UsageData, UsageDetail, UsageWindow},
   utils::http::{Client, HttpError},
 };
 
@@ -157,7 +157,7 @@ impl From<UsageResponse> for UsageData {
       peak_hours: None,
       windows,
       details,
-      tier: usage.plan_type.as_ref().map(SubscriptionTier::tier_info),
+      tier: usage.plan_type.as_ref().map(SubscriptionTier::tier),
     };
   }
 }
@@ -191,8 +191,8 @@ impl From<String> for SubscriptionTier {
 }
 
 impl SubscriptionTier {
-  pub fn tier_info(&self) -> TierInfo {
-    return TierInfo {
+  pub fn tier(&self) -> Tier {
+    return Tier {
       name: self.to_string(),
       color: match self {
         SubscriptionTier::Free | SubscriptionTier::Unknown(_) => Rgb::new(140, 140, 155),
@@ -208,7 +208,7 @@ impl SubscriptionTier {
 
 /// Path to the Codex CLI's `auth.json`. Honors `CODEX_HOME` like the CLI does, falling
 /// back to `~/.codex`.
-fn get_auth_path() -> Result<Utf8PathBuf> {
+fn auth_path() -> Result<Utf8PathBuf> {
   if let Some(codex_home) = std::env::var("CODEX_HOME").ok().filter(|v| !v.is_empty()) {
     return Ok(Utf8PathBuf::from(codex_home).join("auth.json"));
   }
@@ -292,7 +292,7 @@ impl CodexProvider {
       });
     }
 
-    let path = get_auth_path()?;
+    let path = auth_path()?;
     log::debug!("Reading Codex credentials from {}", path);
 
     let contents = fs_err::read_to_string(&path)?;
@@ -333,7 +333,7 @@ impl CodexProvider {
     let response: TokenResponse = serde_json::from_str(&response).context("Failed to parse token response")?;
 
     // Patch only the fields we own; everything else in the file stays as the CLI wrote it.
-    let path = get_auth_path()?;
+    let path = auth_path()?;
     let mut doc: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(&path)?)?;
     let tokens = doc
       .get_mut("tokens")
@@ -349,7 +349,7 @@ impl CodexProvider {
     doc["last_refresh"] = Timestamp::now().to_string().into();
 
     // Even if the write-back fails we must use the new token: the old refresh token is gone.
-    if let Err(e) = Self::write_auth_file(&path, &doc) {
+    if let Err(e) = Self::write_credentials(&path, &doc) {
       log::error!("Refreshed token but failed to write it back to {} (Codex may need `codex login`): {e:#}", path);
     }
 
@@ -364,7 +364,7 @@ impl CodexProvider {
 
   /// Atomically replaces `auth.json`: write a sibling temp file with owner-only permissions,
   /// then rename over the original so the CLI never observes a half-written file.
-  fn write_auth_file(path: &Utf8Path, doc: &serde_json::Value) -> Result<()> {
+  fn write_credentials(path: &Utf8Path, doc: &serde_json::Value) -> Result<()> {
     use std::io::Write as _;
 
     use fs_err::os::unix::fs::OpenOptionsExt as _;
@@ -486,9 +486,9 @@ impl DataProvider for CodexProvider {
     return Some(self.fetch_usage()?.into());
   }
 
-  fn fetch_profile(&self) -> Option<TierInfo> {
+  fn fetch_tier(&self) -> Option<Tier> {
     // Normally unused: the tier is delivered through `UsageData::tier` by `fetch_data`.
-    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
+    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier()));
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

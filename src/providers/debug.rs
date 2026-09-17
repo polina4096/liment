@@ -5,13 +5,13 @@ use rgb::Rgb;
 
 use crate::{
   constants::*,
-  providers::{ApiUsage, DataProvider, PeakHoursInfo, ProviderKind, TierInfo, UsageData},
+  providers::{ApiUsage, DataProvider, PeakHours, ProviderKind, Tier, UsageData},
 };
 
 /// Wraps another provider and overrides its data with values from environment variables.
 pub struct DebugProvider {
   inner: Arc<dyn DataProvider>,
-  tier: Option<TierInfo>,
+  tier: Option<Tier>,
   utilization: Option<f64>,
   resets_in: Option<i64>,
   extra_usage: Option<ApiUsage>,
@@ -58,15 +58,15 @@ fn parse_bool(s: &str) -> Option<bool> {
   };
 }
 
-/// Parses "name:r,g,b" into a TierInfo.
-fn parse_tier(s: &str) -> Option<TierInfo> {
+/// Parses "name:r,g,b" into a Tier.
+fn parse_tier(s: &str) -> Option<Tier> {
   let (name, rgb) = s.split_once(':')?;
   let mut parts = rgb.split(',');
   let r = parts.next()?.trim().parse().ok()?;
   let g = parts.next()?.trim().parse().ok()?;
   let b = parts.next()?.trim().parse().ok()?;
 
-  return Some(TierInfo {
+  return Some(Tier {
     name: name.to_string(),
     color: Rgb::new(r, g, b),
   });
@@ -133,18 +133,18 @@ impl DataProvider for DebugProvider {
         .as_ref()
         .map(|p| p.ends_at)
         .unwrap_or_else(|| Timestamp::now().checked_add(jiff::SignedDuration::from_secs(3600)).unwrap());
-      data.peak_hours = Some(PeakHoursInfo { is_peak, ends_at });
+      data.peak_hours = Some(PeakHours { is_peak, ends_at });
     }
 
     return Some(data);
   }
 
-  fn fetch_profile(&self) -> Option<TierInfo> {
+  fn fetch_tier(&self) -> Option<Tier> {
     if let Some(tier) = &self.tier {
       return Some(tier.clone());
     }
 
-    return self.inner.fetch_profile();
+    return self.inner.fetch_tier();
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

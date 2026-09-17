@@ -6,7 +6,7 @@ use tap::Tap as _;
 
 use crate::{
   delegate::AppDelegate,
-  providers::{ApiUsage, ProviderKind, TierInfo, UsageData},
+  providers::{ApiUsage, ProviderKind, Tier, UsageData},
   ui::components,
   updater::UpdateState,
 };
@@ -32,20 +32,14 @@ pub fn loading_menu(mtm: MainThreadMarker, app: &AppDelegate) -> Retained<NSMenu
   });
 }
 
-pub fn populate_menu(
-  menu: &NSMenu,
-  mtm: MainThreadMarker,
-  app: &AppDelegate,
-  data: &UsageData,
-  profile: Option<&TierInfo>,
-) {
+pub fn populate_menu(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegate, data: &UsageData, tier: Option<&Tier>) {
   menu.removeAllItems();
 
   // Header with tier badge.
   let config = app.ivars().config();
   let version = if config.show_version { Some(concat!("v", env!("CARGO_PKG_VERSION"))) } else { None };
   let header_item = NSMenuItem::new(mtm);
-  let header_view = components::header_row(mtm, "Usage", &profile, version);
+  let header_view = components::header_row(mtm, "Usage", &tier, version);
   header_item.setView(Some(&header_view));
   menu.addItem(&header_item);
 
@@ -195,6 +189,7 @@ pub fn update_update_item(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDelegat
   if let Some(old_item) = menu.itemWithTag(UPDATE_ITEM_TAG) {
     let index = menu.indexOfItem(&old_item);
     menu.removeItem(&old_item);
+
     let new_item = update_item(mtm, app, state);
     menu.insertItem_atIndex(&new_item, index);
   }
@@ -274,6 +269,7 @@ pub fn update_provider_item(menu: &NSMenu, mtm: MainThreadMarker, app: &AppDeleg
   if let Some(old_item) = menu.itemWithTag(PROVIDER_ITEM_TAG) {
     let index = menu.indexOfItem(&old_item);
     menu.removeItem(&old_item);
+
     let new_item = provider_item(mtm, app, current);
     menu.insertItem_atIndex(&new_item, index);
   }

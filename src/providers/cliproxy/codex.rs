@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::CliproxyClient;
 use crate::providers::{
-  DataProvider, ProviderKind, TierInfo, UsageData,
+  DataProvider, ProviderKind, Tier, UsageData,
   codex::{USAGE_URL, USER_AGENT, UsageResponse},
 };
 
@@ -104,9 +104,9 @@ impl DataProvider for CliproxyCodexProvider {
     return Some(self.fetch_usage()?.into());
   }
 
-  fn fetch_profile(&self) -> Option<TierInfo> {
+  fn fetch_tier(&self) -> Option<Tier> {
     // Normally unused: the tier is delivered through `UsageData::tier` by `fetch_data`.
-    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
+    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier()));
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {

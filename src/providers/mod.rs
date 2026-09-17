@@ -7,17 +7,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
   providers::{
-    claude_code::{ClaudeCodeProvider, ClaudeCodeSettings},
+    claude::{ClaudeProvider, ClaudeSettings},
     cliproxy::{CliproxyClaudeProvider, CliproxyClaudeSettings, CliproxyCodexProvider, CliproxyCodexSettings},
     codex::{CodexProvider, CodexSettings},
   },
   utils::notification,
 };
 
-pub mod claude_code;
+pub mod claude;
 pub mod cliproxy;
 pub mod codex;
 pub mod debug;
+pub mod tier;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq, strum::Display, strum::EnumIter)]
 #[serde(rename_all = "snake_case")]
@@ -36,19 +37,19 @@ pub enum ProviderKind {
 
 #[derive(Deserialize, Serialize, Default)]
 pub struct ProviderSettings {
-  pub claude_code: Option<ClaudeCodeSettings>,
+  pub claude_code: Option<ClaudeSettings>,
   pub codex: Option<CodexSettings>,
   pub cliproxy_claude: Option<CliproxyClaudeSettings>,
   pub cliproxy_codex: Option<CliproxyCodexSettings>,
 }
 
 #[derive(Clone)]
-pub struct TierInfo {
+pub struct Tier {
   pub name: String,
   pub color: Rgb<u8>,
 }
 
-pub struct PeakHoursInfo {
+pub struct PeakHours {
   pub is_peak: bool,
   /// When the current peak/off-peak period ends.
   pub ends_at: Timestamp,
@@ -59,7 +60,7 @@ pub struct UsageData {
   pub api_usage: Option<ApiUsage>,
 
   /// Peak hours info, if applicable.
-  pub peak_hours: Option<PeakHoursInfo>,
+  pub peak_hours: Option<PeakHours>,
 
   /// Usage windows (e.g. 5h limit, 7d limit).
   pub windows: Vec<UsageWindow>,
@@ -68,8 +69,8 @@ pub struct UsageData {
   pub details: Vec<UsageDetail>,
 
   /// Account tier, when the usage fetch already learned it. `None` means the app should
-  /// resolve it via `DataProvider::fetch_profile` (subject to its own cache) instead.
-  pub tier: Option<TierInfo>,
+  /// resolve it via `DataProvider::fetch_tier` (subject to its own cache) instead.
+  pub tier: Option<Tier>,
 }
 
 pub struct UsageDetail {
@@ -145,7 +146,7 @@ pub trait DataProvider: Send + Sync {
   /// Fetches the account tier info with a dedicated request. Returns `None` if the provider
   /// doesn't support it. Providers whose usage response already carries the tier should set
   /// `UsageData::tier` instead, which takes precedence and costs no extra request.
-  fn fetch_profile(&self) -> Option<TierInfo> {
+  fn fetch_tier(&self) -> Option<Tier> {
     return None;
   }
 
@@ -180,7 +181,7 @@ impl ProviderKind {
       ProviderKind::ClaudeCode => {
         let settings = settings.claude_code.clone().unwrap_or_default();
 
-        return Ok(Arc::new(ClaudeCodeProvider::new(&settings, cli_keychain)?));
+        return Ok(Arc::new(ClaudeProvider::new(&settings, cli_keychain)?));
       }
 
       ProviderKind::Codex => {

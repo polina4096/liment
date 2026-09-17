@@ -24,8 +24,9 @@ use crate::{
   CONFIG_PATH,
   config::{Config, DisplayMode},
   constants::LIMENT_DEBUG_REFETCH_INTERVAL,
-  profile_cache::ProfileCache,
-  providers::{DataProvider, NullProvider, ProviderKind, TierInfo, UsageData, UsageWindow, debug::DebugProvider},
+  providers::{
+    DataProvider, NullProvider, ProviderKind, Tier, UsageData, UsageWindow, debug::DebugProvider, tier::TierCache,
+  },
   ui::views,
   updater::{self, UpdateState, Updater},
   utils::{codesign, log::LOG_DIR, macos::schedule_timer, notification, toml::serialize_to_item},
@@ -44,8 +45,8 @@ pub struct AppDelegateIvars {
   /// Provider to fetch usage data.
   provider: RefCell<Arc<dyn DataProvider>>,
 
-  /// Cached profile tier info per provider, shared with background threads.
-  profile_cache: Arc<ProfileCache>,
+  /// Cached account tier per provider, shared with background threads.
+  tier_cache: Arc<TierCache>,
 
   /// Status bar item for displaying the current usage.
   status_item: Retained<NSStatusItem>,
@@ -218,7 +219,7 @@ impl AppDelegate {
     let this = mtm.alloc::<AppDelegate>();
     let this = this.set_ivars(AppDelegateIvars {
       provider: RefCell::new(provider),
-      profile_cache: Arc::new(ProfileCache::default()),
+      tier_cache: Arc::new(TierCache::default()),
       status_item,
       config: RefCell::new(config),
       updater: Updater::new(),
@@ -306,18 +307,18 @@ impl AppDelegate {
   /// Refetches latest data from the API and updates the UI.
   fn refresh(&self) {
     let provider = Arc::clone(&self.ivars().provider());
-    let profile_cache = Arc::clone(&self.ivars().profile_cache);
+    let tier_cache = Arc::clone(&self.ivars().tier_cache);
     let mtm = self.mtm();
     let this = MainThreadBound::new(self.retain(), mtm);
 
     std::thread::spawn(move || {
       let data = provider.fetch_data();
-      let profile = profile_cache.resolve(&*provider, data.as_ref());
+      let tier = tier_cache.resolve(&*provider, data.as_ref());
 
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread");
 
-        this.get(mtm).rebuild_ui(data.as_ref(), profile.as_ref());
+        this.get(mtm).rebuild_ui(data.as_ref(), tier.as_ref());
       });
     });
   }
@@ -398,7 +399,7 @@ impl AppDelegate {
     }
   }
 
-  fn rebuild_ui(&self, data: Option<&UsageData>, profile: Option<&TierInfo>) {
+  fn rebuild_ui(&self, data: Option<&UsageData>, tier: Option<&Tier>) {
     let mtm = MainThreadMarker::from(self);
     let status_item = &self.ivars().status_item;
 
@@ -503,7 +504,7 @@ impl AppDelegate {
       });
     });
 
-    views::populate_menu(&menu, mtm, self, data, profile);
+    views::populate_menu(&menu, mtm, self, data, tier);
   }
 
   /// Picks the usage windows shown in the tray, honoring the `tray_windows` config list

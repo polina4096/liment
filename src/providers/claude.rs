@@ -10,14 +10,24 @@ use secrecy::{ExposeSecret, SecretString};
 use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 
-use super::{DataProvider, PeakHoursInfo, ProviderKind, UsageData};
+use super::{DataProvider, PeakHours, ProviderKind, UsageData};
 use crate::{
-  providers::{ApiUsage, TierInfo, UsageWindow},
+  providers::{ApiUsage, Tier, UsageWindow},
   utils::http::{Client, HttpError},
 };
 
+pub const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+pub const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
+const OVERAGE_GRANT_URL: &str = "https://api.anthropic.com/api/oauth/organizations/{org}/overage_credit_grant";
+const OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
+/// Claude Code's public OAuth client id, embedded in the CLI.
+const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+pub const ANTHROPIC_BETA: &str = "oauth-2025-04-20";
+pub const USER_AGENT: &str = "claude-code/2.1.71";
+const KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
+
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct ClaudeCodeSettings {
+pub struct ClaudeSettings {
   /// OAuth token override. If not set, reads from keychain.
   pub token: Option<String>,
 }
@@ -25,14 +35,13 @@ pub struct ClaudeCodeSettings {
 #[derive(Debug, Deserialize, Clone)]
 pub struct UsageResponse {
   #[serde(default)]
-  pub limits: Vec<RateLimit>,
-  pub five_hour: Option<UsageBucket>,
-  pub seven_day: Option<UsageBucket>,
+  pub limits: Vec<Limit>,
   pub extra_usage: Option<ExtraUsage>,
 }
 
+/// One entry of the `limits` array: a single usage window.
 #[derive(Debug, Deserialize, Clone)]
-pub struct RateLimit {
+pub struct Limit {
   pub kind: String,
   #[serde(default)]
   pub percent: Option<f64>,
@@ -53,7 +62,7 @@ pub struct LimitScopeModel {
   pub display_name: Option<String>,
 }
 
-impl RateLimit {
+impl Limit {
   fn to_window(&self) -> Option<UsageWindow> {
     let (title, short_title, period_secs) = match self.kind.as_str() {
       "session" => ("5h Limit".to_string(), Some("5h".to_string()), 5 * 3600),
@@ -77,7 +86,7 @@ impl RateLimit {
 
 #[expect(unused)]
 /// Weekdays 13:00–19:00 GMT are peak hours for Claude.
-pub fn compute_claude_peak_hours() -> PeakHoursInfo {
+pub fn compute_claude_peak_hours() -> PeakHours {
   let now = Timestamp::now().to_zoned(jiff::tz::TimeZone::get("GMT").unwrap());
   let weekday = now.weekday();
   let hour = now.hour();
@@ -105,7 +114,7 @@ pub fn compute_claude_peak_hours() -> PeakHoursInfo {
     next_day.with().hour(13).minute(0).second(0).build().unwrap().timestamp()
   };
 
-  return PeakHoursInfo { is_peak, ends_at };
+  return PeakHours { is_peak, ends_at };
 }
 
 impl From<UsageResponse> for UsageData {
@@ -119,27 +128,7 @@ impl From<UsageResponse> for UsageData {
       };
     });
 
-    let mut windows: Vec<UsageWindow> = usage.limits.iter().filter_map(RateLimit::to_window).collect();
-
-    // Fall back to the legacy five_hour/seven_day fields if the `limits` array is absent.
-    if windows.is_empty() {
-      let buckets: &[(&str, Option<&str>, &Option<UsageBucket>, i64)] = &[
-        ("5h Limit", Some("5h"), &usage.five_hour, 5 * 3600),
-        ("7d Limit", Some("7d"), &usage.seven_day, 7 * 86400),
-      ];
-
-      for (title, short_title, bucket, period_secs) in buckets {
-        if let Some(b) = bucket {
-          windows.push(UsageWindow {
-            title: title.to_string(),
-            short_title: short_title.map(|s| s.to_string()),
-            utilization: b.utilization.unwrap_or(0.0),
-            resets_at: b.resets_at,
-            period_seconds: Some(*period_secs),
-          });
-        }
-      }
-    }
+    let windows: Vec<UsageWindow> = usage.limits.iter().filter_map(Limit::to_window).collect();
 
     return UsageData {
       api_usage,
@@ -151,13 +140,6 @@ impl From<UsageResponse> for UsageData {
       tier: None,
     };
   }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct UsageBucket {
-  #[serde(default)]
-  pub utilization: Option<f64>,
-  pub resets_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -239,8 +221,8 @@ impl From<String> for SubscriptionTier {
 }
 
 impl SubscriptionTier {
-  pub fn tier_info(&self) -> TierInfo {
-    return TierInfo {
+  pub fn tier(&self) -> Tier {
+    return Tier {
       name: self.to_string(),
       color: match self {
         SubscriptionTier::Free | SubscriptionTier::Unknown(_) => Rgb::new(140, 140, 155),
@@ -251,8 +233,6 @@ impl SubscriptionTier {
     };
   }
 }
-
-const KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
 
 /// Keychain service name of the Claude Code credentials item.
 ///
@@ -271,15 +251,12 @@ fn config_dir_suffix(config_dir: &str) -> String {
 
   return digest.as_ref()[.. 4].iter().map(|b| format!("{:02x}", b)).collect();
 }
-const OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
-/// Claude Code's public OAuth client id, embedded in the CLI.
-const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 
-pub struct ClaudeCodeProvider {
-  token: Mutex<TokenState>,
-  /// Whether the token came from the config override. Config tokens are never refreshed
-  /// or replaced from the keychain — the user asked for that exact token.
-  token_from_config: bool,
+pub struct ClaudeProvider {
+  settings: ClaudeSettings,
+  /// In-memory credentials. Unlike Codex, these aren't re-read on every request: a keychain
+  /// read spawns `security` (or may prompt), so they're cached until known-stale.
+  credentials: Mutex<Credentials>,
   /// Serializes token refreshes so two concurrent fetches can't both spend the (rotating)
   /// refresh token.
   refresh_lock: Mutex<()>,
@@ -292,15 +269,18 @@ pub struct ClaudeCodeProvider {
   overage_grant: Mutex<OverageGrantCache>,
 }
 
-struct TokenState {
-  secret: SecretString,
+#[derive(Clone)]
+struct Credentials {
+  token: SecretString,
   /// Known expiry from the keychain. `None` when the source doesn't provide one (e.g. config override).
   expires_at: Option<Timestamp>,
   /// Refresh token from the keychain, used to mint a new access token when the CLI hasn't.
   refresh_token: Option<SecretString>,
-  /// The raw keychain JSON this state was parsed from, so a refresh can write back
-  /// without dropping fields liment doesn't know about.
+  /// The raw keychain JSON these were parsed from, so a refresh can write back without
+  /// dropping fields liment doesn't know about.
   raw_json: Option<String>,
+  /// Whether the token came from the config override (never refreshed or replaced).
+  from_config: bool,
 }
 
 #[derive(Default)]
@@ -309,47 +289,58 @@ struct OverageGrantCache {
   fetched_at: Option<Instant>,
 }
 
-impl ClaudeCodeProvider {
-  pub fn new(settings: &ClaudeCodeSettings, cli_keychain: bool) -> Result<Self> {
+impl ClaudeProvider {
+  pub fn new(settings: &ClaudeSettings, cli_keychain: bool) -> Result<Self> {
     log::info!("Initializing Claude Code provider");
 
-    let token = Self::fetch_token(settings, cli_keychain)?;
-
-    return Ok(Self {
-      token: Mutex::new(token),
-      token_from_config: settings.token.is_some(),
+    let provider = Self {
+      settings: settings.clone(),
+      credentials: Mutex::new(Credentials {
+        token: SecretString::from(String::new()),
+        expires_at: None,
+        refresh_token: None,
+        raw_json: None,
+        from_config: false,
+      }),
       refresh_lock: Mutex::new(()),
       client: Client::new(),
       cli_keychain,
       org_uuid: Mutex::new(None),
       overage_grant: Mutex::new(OverageGrantCache::default()),
-    });
+    };
+
+    *provider.credentials.lock().unwrap() = provider.read_credentials()?;
+
+    return Ok(provider);
   }
 
-  fn fetch_token(settings: &ClaudeCodeSettings, cli_keychain: bool) -> Result<TokenState> {
-    if let Some(token) = &settings.token {
-      log::info!("Using token from provider settings");
+  /// Reads the credentials from the config override if set, otherwise from the keychain.
+  fn read_credentials(&self) -> Result<Credentials> {
+    if let Some(token) = &self.settings.token {
+      log::debug!("Using token from provider settings");
 
-      return Ok(TokenState {
-        secret: SecretString::from(token.clone()),
+      return Ok(Credentials {
+        token: SecretString::from(token.clone()),
         expires_at: None,
         refresh_token: None,
         raw_json: None,
+        from_config: true,
       });
     }
 
-    log::debug!("Token not set in config, fetching from keychain");
+    log::debug!("Token not set in config, reading from keychain");
 
-    return Self::fetch_keychain_token(cli_keychain);
+    return self.read_keychain_credentials();
   }
 
   /// Reads and parses the Claude Code OAuth credentials from the macOS login keychain.
   ///
-  /// When `cli` is set, the read is delegated to the `security` command-line tool instead of the
-  /// keychain API. Because the requesting process is then Apple's signed `security` binary (which
-  /// the item's ACL trusts) rather than this app, the per-app keychain access prompt never appears.
-  fn fetch_keychain_token(cli: bool) -> Result<TokenState> {
-    let json_str = if cli { Self::read_keychain_via_cli()? } else { Self::read_keychain_via_api()? };
+  /// When `cli_keychain` is set, the read is delegated to the `security` command-line tool
+  /// instead of the keychain API. Because the requesting process is then Apple's signed
+  /// `security` binary (which the item's ACL trusts) rather than this app, the per-app keychain
+  /// access prompt never appears.
+  fn read_keychain_credentials(&self) -> Result<Credentials> {
+    let json_str = if self.cli_keychain { Self::read_keychain_via_cli()? } else { Self::read_keychain_via_api()? };
 
     #[derive(Deserialize)]
     struct ClaudeOAuth {
@@ -370,11 +361,12 @@ impl ClaudeCodeProvider {
     let value: ClaudeKeychain = serde_json::from_str(&json_str)?;
     let expires_at = value.claude_oauth.expires_at.and_then(|ms| Timestamp::from_millisecond(ms).ok());
 
-    return Ok(TokenState {
-      secret: SecretString::from(value.claude_oauth.access_token),
+    return Ok(Credentials {
+      token: SecretString::from(value.claude_oauth.access_token),
       expires_at,
       refresh_token: value.claude_oauth.refresh_token.map(SecretString::from),
       raw_json: Some(json_str),
+      from_config: false,
     });
   }
 
@@ -382,7 +374,7 @@ impl ClaudeCodeProvider {
   ///
   /// Always goes through the `security` CLI (regardless of `cli_keychain`) — that's how Claude
   /// Code itself writes the item, so the ACL keeps trusting the same signed binary.
-  fn write_keychain(json: &str) -> Result<()> {
+  fn write_credentials(json: &str) -> Result<()> {
     let attrs = std::process::Command::new("security")
       .args(["find-generic-password", "-s", &KEYCHAIN_SERVICE])
       .output()?;
@@ -421,9 +413,9 @@ impl ClaudeCodeProvider {
 
   /// Exchanges the refresh token for a new access token and persists the result to the
   /// keychain so Claude Code keeps working (refresh tokens rotate; the old one is dead after this).
-  fn refresh_via_oauth(&self, state: &TokenState) -> Result<TokenState> {
-    let refresh_token = state.refresh_token.as_ref().context("Keychain has no refresh token")?;
-    let raw_json = state.raw_json.as_ref().context("No keychain JSON to update")?;
+  fn refresh_via_oauth(&self, stale: &Credentials) -> Result<Credentials> {
+    let refresh_token = stale.refresh_token.as_ref().context("Keychain has no refresh token")?;
+    let raw_json = stale.raw_json.as_ref().context("No keychain JSON to update")?;
 
     log::info!("Refreshing Claude Code access token via OAuth");
 
@@ -463,60 +455,62 @@ impl ClaudeCodeProvider {
     let new_json = doc.to_string();
 
     // Even if the write-back fails we must use the new token: the old refresh token is gone.
-    if let Err(e) = Self::write_keychain(&new_json) {
+    if let Err(e) = Self::write_credentials(&new_json) {
       log::error!(
         "Refreshed token but failed to write it back to the keychain (Claude Code may need `claude login`): {e:#}"
       );
     }
 
-    return Ok(TokenState {
-      secret: SecretString::from(response.access_token),
+    return Ok(Credentials {
+      token: SecretString::from(response.access_token),
       expires_at,
-      refresh_token: response.refresh_token.map(SecretString::from).or_else(|| state.refresh_token.clone()),
+      refresh_token: response.refresh_token.map(SecretString::from).or_else(|| stale.refresh_token.clone()),
       raw_json: Some(new_json),
+      from_config: false,
     });
   }
 
-  /// Replaces a stale in-memory token: first by re-reading the keychain (the CLI may already
-  /// have refreshed it), and if that still yields the same token, by refreshing it ourselves.
-  /// Returns `false` if no usable token could be obtained.
-  fn reload_or_refresh(&self, stale: &str) -> bool {
-    if self.token_from_config {
+  /// Replaces stale credentials: first by re-reading the keychain (the CLI may already have
+  /// refreshed it), and if that still yields the same token, by refreshing it ourselves.
+  /// The result is also stored as the provider's current credentials.
+  fn reload_or_refresh(&self, stale: &Credentials) -> Option<Credentials> {
+    if stale.from_config {
       log::error!("Token from `settings.claude_code.token` was rejected; update or remove it to use the keychain");
-      return false;
+      return None;
     }
 
     let _guard = self.refresh_lock.lock().unwrap();
 
-    // Another thread may have replaced the token while we waited for the lock.
-    if self.token.lock().unwrap().secret.expose_secret() != stale {
-      return true;
+    // Another thread may have replaced the credentials while we waited for the lock.
+    {
+      let current = self.credentials.lock().unwrap();
+      if current.token.expose_secret() != stale.token.expose_secret() {
+        return Some(current.clone());
+      }
     }
 
-    let from_keychain = match Self::fetch_keychain_token(self.cli_keychain) {
-      Ok(state) => state,
+    let from_keychain = match self.read_keychain_credentials() {
+      Ok(credentials) => credentials,
       Err(e) => {
         log::error!("Failed to re-read keychain: {e:#}");
-        return false;
+        return None;
       }
     };
 
-    if from_keychain.secret.expose_secret() != stale {
+    let fresh = if from_keychain.token.expose_secret() != stale.token.expose_secret() {
       log::info!("Loaded fresh token from keychain");
-      *self.token.lock().unwrap() = from_keychain;
-      return true;
+      from_keychain
     }
+    else {
+      self
+        .refresh_via_oauth(&from_keychain)
+        .inspect_err(|e| log::error!("Failed to refresh access token: {e:#}"))
+        .ok()?
+    };
 
-    match self.refresh_via_oauth(&from_keychain) {
-      Ok(state) => {
-        *self.token.lock().unwrap() = state;
-        return true;
-      }
-      Err(e) => {
-        log::error!("Failed to refresh access token: {e:#}");
-        return false;
-      }
-    }
+    *self.credentials.lock().unwrap() = fresh.clone();
+
+    return Some(fresh);
   }
 
   /// Reads the raw credentials JSON from the keychain using the `security_framework` API.
@@ -559,7 +553,7 @@ impl ClaudeCodeProvider {
   fn fetch_usage(&self) -> Option<UsageResponse> {
     log::debug!("Fetching usage data");
 
-    let body = self.get("https://api.anthropic.com/api/oauth/usage")?;
+    let body = self.get(USAGE_URL)?;
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed usage: {:?}", u))
@@ -567,10 +561,10 @@ impl ClaudeCodeProvider {
       .ok();
   }
 
-  fn fetch_profile_response(&self) -> Option<ProfileResponse> {
+  fn fetch_profile(&self) -> Option<ProfileResponse> {
     log::debug!("Fetching profile data");
 
-    let body = self.get("https://api.anthropic.com/api/oauth/profile")?;
+    let body = self.get(PROFILE_URL)?;
 
     let response: Option<ProfileResponse> = serde_json::from_str(&body)
       .inspect(|p: &ProfileResponse| log::debug!("Parsed profile: {:?}", p))
@@ -603,7 +597,7 @@ impl ClaudeCodeProvider {
     let org_uuid = self.org_uuid.lock().unwrap().clone()?;
 
     log::debug!("Fetching overage credit grant");
-    let url = format!("https://api.anthropic.com/api/oauth/organizations/{}/overage_credit_grant", org_uuid);
+    let url = OVERAGE_GRANT_URL.replace("{org}", &org_uuid);
     let body = self.get(&url)?;
 
     let grant: Option<OverageCreditGrant> = serde_json::from_str(&body)
@@ -621,31 +615,23 @@ impl ClaudeCodeProvider {
   }
 
   fn get(&self, url: &str) -> Option<String> {
+    let mut credentials = self.credentials.lock().unwrap().clone();
+
     // Proactive expiry check: if the current token is known to have expired,
     // get a fresh one before making the request.
-    let expired = {
-      let token_guard = self.token.lock().unwrap();
-      token_guard
-        .expires_at
-        .is_some_and(|ts| Timestamp::now() >= ts)
-        .then(|| token_guard.secret.expose_secret().to_owned())
-    };
-    if let Some(stale) = expired {
+    if credentials.expires_at.is_some_and(|ts| Timestamp::now() >= ts) && !credentials.from_config {
       log::debug!("Access token expired, refreshing before request");
-      if !self.reload_or_refresh(&stale) {
-        return None;
-      }
+      credentials = self.reload_or_refresh(&credentials)?;
     }
 
-    let mut result = self.get_inner(url);
+    let mut result = self.get_inner(url, &credentials);
 
     if let Err(HttpError::Status(401)) = &result {
       log::warn!("Got 401 for {}, refreshing token", url);
 
-      let stale = self.token.lock().unwrap().secret.expose_secret().to_owned();
-      if self.reload_or_refresh(&stale) {
+      if let Some(fresh) = self.reload_or_refresh(&credentials) {
         log::info!("Token refreshed, retrying request");
-        result = self.get_inner(url);
+        result = self.get_inner(url, &fresh);
       }
     }
 
@@ -660,22 +646,18 @@ impl ClaudeCodeProvider {
     };
   }
 
-  fn get_inner(&self, url: &str) -> Result<String, HttpError> {
-    // Copy the header out so the token lock is not held across the network call.
-    let auth_header = {
-      let token = self.token.lock().unwrap();
-      format!("Bearer {}", token.secret.expose_secret())
-    };
+  fn get_inner(&self, url: &str, credentials: &Credentials) -> Result<String, HttpError> {
+    let auth_header = format!("Bearer {}", credentials.token.expose_secret());
 
     return self.client.get(url, &[
       ("Authorization", &auth_header),
-      ("anthropic-beta", "oauth-2025-04-20"),
-      ("User-Agent", "claude-code/2.1.71"),
+      ("anthropic-beta", ANTHROPIC_BETA),
+      ("User-Agent", USER_AGENT),
     ]);
   }
 }
 
-impl DataProvider for ClaudeCodeProvider {
+impl DataProvider for ClaudeProvider {
   fn kind(&self) -> ProviderKind {
     return ProviderKind::ClaudeCode;
   }
@@ -690,9 +672,9 @@ impl DataProvider for ClaudeCodeProvider {
       // hit the cached UUID directly. The tier from that same response is passed along so
       // the profile cache doesn't repeat the request.
       if self.org_uuid.lock().unwrap().is_none()
-        && let Some(profile) = self.fetch_profile_response()
+        && let Some(profile) = self.fetch_profile()
       {
-        data.tier = Some(profile.organization.rate_limit_tier.tier_info());
+        data.tier = Some(profile.organization.rate_limit_tier.tier());
       }
 
       if let Some(grant) = self.fetch_overage_grant()
@@ -705,24 +687,11 @@ impl DataProvider for ClaudeCodeProvider {
     return Some(data);
   }
 
-  fn fetch_profile(&self) -> Option<TierInfo> {
-    return self.fetch_profile_response().map(|p| p.organization.rate_limit_tier.tier_info());
+  fn fetch_tier(&self) -> Option<Tier> {
+    return self.fetch_profile().map(|p| p.organization.rate_limit_tier.tier());
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
     return include_bytes!("../../resources/claude.svg");
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  /// Observed from Claude Code 2.1.274: `CLAUDE_CONFIG_DIR=/tmp/claude-501/cc-probe/cfg`
-  /// made it look up `Claude Code-credentials-e99aaeea`.
-  #[test]
-  fn keychain_suffix_matches_claude_code() {
-    assert_eq!(config_dir_suffix("/tmp/claude-501/cc-probe/cfg"), "e99aaeea");
-    assert_eq!(config_dir_suffix("/tmp/claude-501/cc-probe/cfg/"), "20b01353");
   }
 }

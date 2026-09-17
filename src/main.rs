@@ -15,7 +15,6 @@ use crate::{config::Config, delegate::AppDelegate, watcher::watch_config};
 mod config;
 mod constants;
 mod delegate;
-mod profile_cache;
 mod providers;
 mod ui;
 mod updater;
