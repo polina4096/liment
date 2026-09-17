@@ -698,6 +698,7 @@ dependencies = [
  "objc2-user-notifications",
  "open",
  "rgb",
+ "ring",
  "secrecy",
  "security-framework",
  "semver",

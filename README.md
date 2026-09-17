@@ -8,7 +8,7 @@ The config file is located at `~/.config/liment/config.toml` and is created auto
 
 ### Claude Code
 
-Uses the Claude Code OAuth token from the system keychain. No extra configuration needed.
+Uses the Claude Code OAuth token from the system keychain (`CLAUDE_CONFIG_DIR` is honored). No extra configuration needed.
 When the access token expires, liment refreshes it itself and writes the new tokens back to the keychain,
 so Claude Code and liment stay logged in together.
 

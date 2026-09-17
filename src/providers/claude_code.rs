@@ -1,5 +1,5 @@
 use std::{
-  sync::Mutex,
+  sync::{LazyLock, Mutex},
   time::{Duration, Instant},
 };
 
@@ -241,7 +241,25 @@ impl std::fmt::Display for SubscriptionTier {
   }
 }
 
-const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+const KEYCHAIN_SERVICE_BASE: &str = "Claude Code-credentials";
+
+/// Keychain service name of the Claude Code credentials item.
+///
+/// Claude Code keeps one item per config home: with `CLAUDE_CONFIG_DIR` set, the CLI appends
+/// `-` plus the first 8 hex chars of SHA-256 of the *literal* env value (no path normalization —
+/// a trailing slash changes the hash, and even the default `~/.claude` spelled out gets a suffix).
+static KEYCHAIN_SERVICE: LazyLock<String> = LazyLock::new(|| {
+  return match std::env::var("CLAUDE_CONFIG_DIR").ok().filter(|v| !v.is_empty()) {
+    Some(config_dir) => format!("{}-{}", KEYCHAIN_SERVICE_BASE, config_dir_suffix(&config_dir)),
+    None => KEYCHAIN_SERVICE_BASE.to_string(),
+  };
+});
+
+fn config_dir_suffix(config_dir: &str) -> String {
+  let digest = ring::digest::digest(&ring::digest::SHA256, config_dir.as_bytes());
+
+  return digest.as_ref()[.. 4].iter().map(|b| format!("{:02x}", b)).collect();
+}
 const OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
 /// Claude Code's public OAuth client id, embedded in the CLI.
 const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -355,7 +373,7 @@ impl ClaudeCodeProvider {
   /// Code itself writes the item, so the ACL keeps trusting the same signed binary.
   fn write_keychain(json: &str) -> Result<()> {
     let attrs = std::process::Command::new("security")
-      .args(["find-generic-password", "-s", KEYCHAIN_SERVICE])
+      .args(["find-generic-password", "-s", &KEYCHAIN_SERVICE])
       .output()?;
 
     if !attrs.status.success() {
@@ -377,7 +395,7 @@ impl ClaudeCodeProvider {
         "-a",
         &account,
         "-s",
-        KEYCHAIN_SERVICE,
+        &KEYCHAIN_SERVICE,
         "-w",
         json,
       ])
@@ -494,7 +512,7 @@ impl ClaudeCodeProvider {
   fn read_keychain_via_api() -> Result<String> {
     let results = ItemSearchOptions::new()
       .class(ItemClass::generic_password())
-      .service(KEYCHAIN_SERVICE)
+      .service(&KEYCHAIN_SERVICE)
       .load_data(true)
       .search()?;
 
@@ -516,7 +534,7 @@ impl ClaudeCodeProvider {
     log::debug!("Reading keychain via the `security` CLI");
 
     let output = std::process::Command::new("security")
-      .args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"])
+      .args(["find-generic-password", "-s", &KEYCHAIN_SERVICE, "-w"])
       .output()?;
 
     if !output.status.success() {
@@ -679,5 +697,18 @@ impl DataProvider for ClaudeCodeProvider {
 
   fn tray_icon_svg(&self) -> &'static [u8] {
     return include_bytes!("../../resources/claude.svg");
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// Observed from Claude Code 2.1.274: `CLAUDE_CONFIG_DIR=/tmp/claude-501/cc-probe/cfg`
+  /// made it look up `Claude Code-credentials-e99aaeea`.
+  #[test]
+  fn keychain_suffix_matches_claude_code() {
+    assert_eq!(config_dir_suffix("/tmp/claude-501/cc-probe/cfg"), "e99aaeea");
+    assert_eq!(config_dir_suffix("/tmp/claude-501/cc-probe/cfg/"), "20b01353");
   }
 }
