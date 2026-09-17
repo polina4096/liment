@@ -1,7 +1,7 @@
 [package]
 name = "liment"
 description = "Simple LLM usage limits in your tray and menu bar."
-version = "0.1.21"
+version = "0.1.22"
 edition = "2024"
 
 [lints.clippy]
