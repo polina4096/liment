@@ -27,7 +27,7 @@ token = "sk-ant-..."
 
 ### Codex
 
-Uses the ChatGPT token from `~/.codex/auth.json` (written by `codex login`). No extra configuration needed.
+Uses the ChatGPT token from `~/.codex/auth.json` (written by `codex login`; `CODEX_HOME` is honored). No extra configuration needed.
 When the access token expires, liment refreshes it itself and writes the new tokens back to `auth.json`,
 so the Codex CLI and liment stay logged in together.
 

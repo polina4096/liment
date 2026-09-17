@@ -235,7 +235,13 @@ impl TierCache {
   }
 }
 
+/// Path to the Codex CLI's `auth.json`. Honors `CODEX_HOME` like the CLI does, falling
+/// back to `~/.codex`.
 fn get_auth_path() -> Result<Utf8PathBuf> {
+  if let Some(codex_home) = std::env::var("CODEX_HOME").ok().filter(|v| !v.is_empty()) {
+    return Ok(Utf8PathBuf::from(codex_home).join("auth.json"));
+  }
+
   let home = etcetera::home_dir()?;
   let home = Utf8Path::from_path(&home).context("Home directory path is not valid UTF-8")?;
 
