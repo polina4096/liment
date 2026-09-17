@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::CliproxyClient;
 use crate::providers::{
   DataProvider, ProviderKind, TierInfo, UsageData,
-  codex::{USAGE_URL, USER_AGENT, UsageResponse},
+  codex::{TierCache, USAGE_URL, USER_AGENT, UsageResponse},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -24,6 +24,7 @@ pub struct CliproxyCodexSettings {
 pub struct CliproxyCodexProvider {
   client: CliproxyClient,
   auth_index: String,
+  tier: TierCache,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +50,7 @@ impl CliproxyCodexProvider {
     return Ok(Self {
       client: CliproxyClient::new(&settings.base_url, &settings.management_token),
       auth_index: settings.auth_index.clone(),
+      tier: TierCache::default(),
     });
   }
 
@@ -90,6 +92,7 @@ impl CliproxyCodexProvider {
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed codex usage: {:?}", u))
+      .inspect(|u| self.tier.remember(u))
       .inspect_err(|e| log::warn!("Failed to parse codex usage response: {}", e))
       .ok();
   }
@@ -105,7 +108,11 @@ impl DataProvider for CliproxyCodexProvider {
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
+    // The tier rides along in the usage response `fetch_data` just fetched.
+    return self
+      .tier
+      .tier_info()
+      .or_else(|| self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info())));
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
