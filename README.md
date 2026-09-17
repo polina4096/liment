@@ -9,6 +9,8 @@ The config file is located at `~/.config/liment/config.toml` and is created auto
 ### Claude Code
 
 Uses the Claude Code OAuth token from the system keychain. No extra configuration needed.
+When the access token expires, liment refreshes it itself and writes the new tokens back to the keychain,
+so Claude Code and liment stay logged in together.
 
 ```toml
 provider = "claude_code"
@@ -26,6 +28,8 @@ token = "sk-ant-..."
 ### Codex
 
 Uses the ChatGPT token from `~/.codex/auth.json` (written by `codex login`). No extra configuration needed.
+When the access token expires, liment refreshes it itself and writes the new tokens back to `auth.json`,
+so the Codex CLI and liment stay logged in together.
 
 ```toml
 provider = "codex"

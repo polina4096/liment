@@ -3,7 +3,7 @@ use std::{
   time::{Duration, Instant},
 };
 
-use color_eyre::eyre::{ContextCompat as _, Result, bail};
+use color_eyre::eyre::{Context as _, ContextCompat as _, Result, bail};
 use jiff::Timestamp;
 use rgb::Rgb;
 use secrecy::{ExposeSecret, SecretString};
@@ -241,8 +241,19 @@ impl std::fmt::Display for SubscriptionTier {
   }
 }
 
+const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+const OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/v1/oauth/token";
+/// Claude Code's public OAuth client id, embedded in the CLI.
+const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+
 pub struct ClaudeCodeProvider {
   token: Mutex<TokenState>,
+  /// Whether the token came from the config override. Config tokens are never refreshed
+  /// or replaced from the keychain — the user asked for that exact token.
+  token_from_config: bool,
+  /// Serializes token refreshes so two concurrent fetches can't both spend the (rotating)
+  /// refresh token.
+  refresh_lock: Mutex<()>,
   client: Client,
   /// Whether keychain reads (including token refreshes) go through the `security` CLI.
   cli_keychain: bool,
@@ -256,6 +267,11 @@ struct TokenState {
   secret: SecretString,
   /// Known expiry from the keychain. `None` when the source doesn't provide one (e.g. config override).
   expires_at: Option<Timestamp>,
+  /// Refresh token from the keychain, used to mint a new access token when the CLI hasn't.
+  refresh_token: Option<SecretString>,
+  /// The raw keychain JSON this state was parsed from, so a refresh can write back
+  /// without dropping fields liment doesn't know about.
+  raw_json: Option<String>,
 }
 
 #[derive(Default)]
@@ -272,6 +288,8 @@ impl ClaudeCodeProvider {
 
     return Ok(Self {
       token: Mutex::new(token),
+      token_from_config: settings.token.is_some(),
+      refresh_lock: Mutex::new(()),
       client: Client::new(),
       cli_keychain,
       org_uuid: Mutex::new(None),
@@ -286,6 +304,8 @@ impl ClaudeCodeProvider {
       return Ok(TokenState {
         secret: SecretString::from(token.clone()),
         expires_at: None,
+        refresh_token: None,
+        raw_json: None,
       });
     }
 
@@ -306,6 +326,8 @@ impl ClaudeCodeProvider {
     struct ClaudeOAuth {
       #[serde(rename = "accessToken")]
       access_token: String,
+      #[serde(rename = "refreshToken")]
+      refresh_token: Option<String>,
       #[serde(rename = "expiresAt")]
       expires_at: Option<i64>,
     }
@@ -322,14 +344,157 @@ impl ClaudeCodeProvider {
     return Ok(TokenState {
       secret: SecretString::from(value.claude_oauth.access_token),
       expires_at,
+      refresh_token: value.claude_oauth.refresh_token.map(SecretString::from),
+      raw_json: Some(json_str),
     });
+  }
+
+  /// Writes the credentials JSON back to the keychain item, preserving its account name.
+  ///
+  /// Always goes through the `security` CLI (regardless of `cli_keychain`) — that's how Claude
+  /// Code itself writes the item, so the ACL keeps trusting the same signed binary.
+  fn write_keychain(json: &str) -> Result<()> {
+    let attrs = std::process::Command::new("security")
+      .args(["find-generic-password", "-s", KEYCHAIN_SERVICE])
+      .output()?;
+
+    if !attrs.status.success() {
+      bail!("`security find-generic-password` failed: {}", String::from_utf8_lossy(&attrs.stderr).trim());
+    }
+
+    // Attribute dump contains a line like: "acct"<blob>="username"
+    let account = String::from_utf8_lossy(&attrs.stdout)
+      .lines()
+      .find_map(|line| line.trim().strip_prefix("\"acct\"<blob>=\""))
+      .and_then(|rest| rest.strip_suffix('"'))
+      .map(str::to_owned)
+      .context("Keychain item has no account attribute")?;
+
+    let status = std::process::Command::new("security")
+      .args([
+        "add-generic-password",
+        "-U",
+        "-a",
+        &account,
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w",
+        json,
+      ])
+      .output()?;
+
+    if !status.status.success() {
+      bail!("`security add-generic-password` failed: {}", String::from_utf8_lossy(&status.stderr).trim());
+    }
+
+    return Ok(());
+  }
+
+  /// Exchanges the refresh token for a new access token and persists the result to the
+  /// keychain so Claude Code keeps working (refresh tokens rotate; the old one is dead after this).
+  fn refresh_via_oauth(&self, state: &TokenState) -> Result<TokenState> {
+    let refresh_token = state.refresh_token.as_ref().context("Keychain has no refresh token")?;
+    let raw_json = state.raw_json.as_ref().context("No keychain JSON to update")?;
+
+    log::info!("Refreshing Claude Code access token via OAuth");
+
+    let body = serde_json::json!({
+      "grant_type": "refresh_token",
+      "refresh_token": refresh_token.expose_secret(),
+      "client_id": OAUTH_CLIENT_ID,
+    });
+
+    #[derive(Deserialize)]
+    struct TokenResponse {
+      access_token: String,
+      refresh_token: Option<String>,
+      expires_in: Option<i64>,
+    }
+
+    let response = self.client.post_json(OAUTH_TOKEN_URL, &[], &body.to_string())?;
+    let response: TokenResponse = serde_json::from_str(&response).context("Failed to parse token response")?;
+
+    let expires_at = response
+      .expires_in
+      .and_then(|secs| Timestamp::now().checked_add(jiff::SignedDuration::from_secs(secs)).ok());
+
+    // Patch only the fields we own; everything else in the item stays as the CLI wrote it.
+    let mut doc: serde_json::Value = serde_json::from_str(raw_json)?;
+    let oauth = doc
+      .get_mut("claudeAiOauth")
+      .and_then(serde_json::Value::as_object_mut)
+      .context("Keychain JSON has no claudeAiOauth object")?;
+    oauth.insert("accessToken".into(), response.access_token.clone().into());
+    if let Some(refresh) = &response.refresh_token {
+      oauth.insert("refreshToken".into(), refresh.clone().into());
+    }
+    if let Some(expires_at) = expires_at {
+      oauth.insert("expiresAt".into(), expires_at.as_millisecond().into());
+    }
+    let new_json = doc.to_string();
+
+    // Even if the write-back fails we must use the new token: the old refresh token is gone.
+    if let Err(e) = Self::write_keychain(&new_json) {
+      log::error!(
+        "Refreshed token but failed to write it back to the keychain (Claude Code may need `claude login`): {e:#}"
+      );
+    }
+
+    return Ok(TokenState {
+      secret: SecretString::from(response.access_token),
+      expires_at,
+      refresh_token: response.refresh_token.map(SecretString::from).or_else(|| state.refresh_token.clone()),
+      raw_json: Some(new_json),
+    });
+  }
+
+  /// Replaces a stale in-memory token: first by re-reading the keychain (the CLI may already
+  /// have refreshed it), and if that still yields the same token, by refreshing it ourselves.
+  /// Returns `false` if no usable token could be obtained.
+  fn reload_or_refresh(&self, stale: &str) -> bool {
+    if self.token_from_config {
+      log::error!("Token from `settings.claude_code.token` was rejected; update or remove it to use the keychain");
+      return false;
+    }
+
+    let _guard = self.refresh_lock.lock().unwrap();
+
+    // Another thread may have replaced the token while we waited for the lock.
+    if self.token.lock().unwrap().secret.expose_secret() != stale {
+      return true;
+    }
+
+    let from_keychain = match Self::fetch_keychain_token(self.cli_keychain) {
+      Ok(state) => state,
+      Err(e) => {
+        log::error!("Failed to re-read keychain: {e:#}");
+        return false;
+      }
+    };
+
+    if from_keychain.secret.expose_secret() != stale {
+      log::info!("Loaded fresh token from keychain");
+      *self.token.lock().unwrap() = from_keychain;
+      return true;
+    }
+
+    match self.refresh_via_oauth(&from_keychain) {
+      Ok(state) => {
+        *self.token.lock().unwrap() = state;
+        return true;
+      }
+      Err(e) => {
+        log::error!("Failed to refresh access token: {e:#}");
+        return false;
+      }
+    }
   }
 
   /// Reads the raw credentials JSON from the keychain using the `security_framework` API.
   fn read_keychain_via_api() -> Result<String> {
     let results = ItemSearchOptions::new()
       .class(ItemClass::generic_password())
-      .service("Claude Code-credentials")
+      .service(KEYCHAIN_SERVICE)
       .load_data(true)
       .search()?;
 
@@ -351,7 +516,7 @@ impl ClaudeCodeProvider {
     log::debug!("Reading keychain via the `security` CLI");
 
     let output = std::process::Command::new("security")
-      .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+      .args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"])
       .output()?;
 
     if !output.status.success() {
@@ -428,51 +593,30 @@ impl ClaudeCodeProvider {
 
   fn get(&self, url: &str) -> Option<String> {
     // Proactive expiry check: if the current token is known to have expired,
-    // re-read the keychain before making the request.
-    let needs_refresh = {
+    // get a fresh one before making the request.
+    let expired = {
       let token_guard = self.token.lock().unwrap();
-      token_guard.expires_at.is_some_and(|ts| Timestamp::now() >= ts)
+      token_guard
+        .expires_at
+        .is_some_and(|ts| Timestamp::now() >= ts)
+        .then(|| token_guard.secret.expose_secret().to_owned())
     };
-    if needs_refresh {
-      log::debug!("Access token expired, re-reading keychain before request");
-      match Self::fetch_keychain_token(self.cli_keychain) {
-        Ok(new_state) => {
-          let mut token_guard = self.token.lock().unwrap();
-          if new_state.secret.expose_secret() == token_guard.secret.expose_secret() {
-            log::warn!("Keychain still has the same expired token, skipping request");
-            return None;
-          }
-          *token_guard = new_state;
-          log::info!("Loaded fresh token from keychain (proactive refresh)");
-        }
-        Err(e) => {
-          log::error!("Failed to re-read keychain for expired token: {}", e);
-          return None;
-        }
+    if let Some(stale) = expired {
+      log::debug!("Access token expired, refreshing before request");
+      if !self.reload_or_refresh(&stale) {
+        return None;
       }
     }
 
     let mut result = self.get_inner(url);
 
     if let Err(HttpError::Status(401)) = &result {
-      log::warn!("Got 401 for {}, refreshing token from keychain", url);
+      log::warn!("Got 401 for {}, refreshing token", url);
 
-      if let Ok(new_state) = Self::fetch_keychain_token(self.cli_keychain) {
-        {
-          let mut token_guard = self.token.lock().unwrap();
-          if new_state.secret.expose_secret() == token_guard.secret.expose_secret() {
-            log::warn!("Keychain returned the same token, skipping retry (token likely expired)");
-            return None;
-          }
-          *token_guard = new_state;
-        }
-
+      let stale = self.token.lock().unwrap().secret.expose_secret().to_owned();
+      if self.reload_or_refresh(&stale) {
         log::info!("Token refreshed, retrying request");
-
-        result = self.get_inner(url).inspect_err(|e| log::error!("Retry failed for {}: {}", url, e));
-      }
-      else {
-        log::error!("Failed to refresh token from keychain");
+        result = self.get_inner(url);
       }
     }
 
