@@ -205,26 +205,35 @@ impl OverageCreditGrant {
 
 const OVERAGE_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize, strum::EnumString, strum::Display)]
 #[serde(from = "String")]
 pub enum SubscriptionTier {
+  #[strum(serialize = "default_claude_free", to_string = "Free")]
   Free,
+  #[strum(serialize = "default_claude_pro", to_string = "Pro")]
   Pro,
+  #[strum(serialize = "default_claude_max_5x", to_string = "Max 5x")]
   Max5x,
+  #[strum(serialize = "default_claude_max_20x", to_string = "Max 20x")]
   Max20x,
   /// A tier this app doesn't know about yet; keeps the raw API identifier so a new plan
   /// still shows a badge instead of failing the profile parse.
+  #[strum(default)]
   Unknown(String),
 }
 
 impl From<String> for SubscriptionTier {
   fn from(value: String) -> Self {
-    return match value.as_str() {
-      "default_claude_free" => SubscriptionTier::Free,
-      "default_claude_pro" => SubscriptionTier::Pro,
-      "default_claude_max_5x" => SubscriptionTier::Max5x,
-      "default_claude_max_20x" => SubscriptionTier::Max20x,
-      _ => SubscriptionTier::Unknown(value),
+    // Never fails: the `default` variant absorbs anything unrecognized.
+    let tier = value.parse().unwrap_or(SubscriptionTier::Unknown(value));
+
+    // Anthropic's identifiers all start with "default_claude_"; drop it so an unknown tier's
+    // badge reads "team" rather than "default_claude_team".
+    return match tier {
+      SubscriptionTier::Unknown(raw) => {
+        SubscriptionTier::Unknown(raw.strip_prefix("default_claude_").unwrap_or(&raw).to_string())
+      }
+      known => known,
     };
   }
 }
@@ -239,19 +248,6 @@ impl SubscriptionTier {
         SubscriptionTier::Max5x => Rgb::new(145, 110, 200),
         SubscriptionTier::Max20x => Rgb::new(205, 130, 95),
       },
-    };
-  }
-}
-
-impl std::fmt::Display for SubscriptionTier {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    return match self {
-      SubscriptionTier::Free => write!(f, "Free"),
-      SubscriptionTier::Pro => write!(f, "Pro"),
-      SubscriptionTier::Max5x => write!(f, "Max 5x"),
-      SubscriptionTier::Max20x => write!(f, "Max 20x"),
-      // Anthropic's identifiers all start with "default_claude_"; drop it for the badge.
-      SubscriptionTier::Unknown(raw) => write!(f, "{}", raw.strip_prefix("default_claude_").unwrap_or(raw)),
     };
   }
 }

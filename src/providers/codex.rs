@@ -162,29 +162,31 @@ impl From<UsageResponse> for UsageData {
   }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize, strum::EnumString, strum::Display)]
 #[serde(from = "String")]
 pub enum SubscriptionTier {
+  #[strum(serialize = "free", to_string = "Free")]
   Free,
+  #[strum(serialize = "plus", to_string = "Plus")]
   Plus,
+  #[strum(serialize = "pro", to_string = "Pro")]
   Pro,
+  #[strum(serialize = "prolite", to_string = "Pro Lite")]
   ProLite,
+  #[strum(serialize = "team", serialize = "business", to_string = "Team")]
   Team,
+  #[strum(serialize = "enterprise", to_string = "Enterprise")]
   Enterprise,
+  /// A plan this app doesn't know about yet; keeps the raw API identifier so a new plan
+  /// still shows a badge instead of failing the usage parse.
+  #[strum(default)]
   Unknown(String),
 }
 
 impl From<String> for SubscriptionTier {
   fn from(value: String) -> Self {
-    return match value.as_str() {
-      "free" => SubscriptionTier::Free,
-      "plus" => SubscriptionTier::Plus,
-      "pro" => SubscriptionTier::Pro,
-      "prolite" => SubscriptionTier::ProLite,
-      "team" | "business" => SubscriptionTier::Team,
-      "enterprise" => SubscriptionTier::Enterprise,
-      _ => SubscriptionTier::Unknown(value),
-    };
+    // Never fails: the `default` variant absorbs anything unrecognized.
+    return value.parse().unwrap_or(SubscriptionTier::Unknown(value));
   }
 }
 
@@ -193,28 +195,13 @@ impl SubscriptionTier {
     return TierInfo {
       name: self.to_string(),
       color: match self {
-        SubscriptionTier::Free => Rgb::new(140, 140, 155),
+        SubscriptionTier::Free | SubscriptionTier::Unknown(_) => Rgb::new(140, 140, 155),
         SubscriptionTier::Plus => Rgb::new(90, 145, 210),
         SubscriptionTier::Pro => Rgb::new(75, 175, 155),
         SubscriptionTier::ProLite => Rgb::new(95, 160, 145),
         SubscriptionTier::Team => Rgb::new(185, 135, 90),
         SubscriptionTier::Enterprise => Rgb::new(130, 115, 180),
-        SubscriptionTier::Unknown(_) => Rgb::new(140, 140, 155),
       },
-    };
-  }
-}
-
-impl std::fmt::Display for SubscriptionTier {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    return match self {
-      SubscriptionTier::Free => write!(f, "Free"),
-      SubscriptionTier::Plus => write!(f, "Plus"),
-      SubscriptionTier::Pro => write!(f, "Pro"),
-      SubscriptionTier::ProLite => write!(f, "Pro Lite"),
-      SubscriptionTier::Team => write!(f, "Team"),
-      SubscriptionTier::Enterprise => write!(f, "Enterprise"),
-      SubscriptionTier::Unknown(name) => write!(f, "{}", name),
     };
   }
 }
