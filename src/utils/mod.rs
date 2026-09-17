@@ -1,4 +1,5 @@
 pub mod codesign;
+pub mod http;
 pub mod log;
 pub mod macos;
 pub mod notification;

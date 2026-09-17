@@ -14,7 +14,6 @@ use crate::{
   utils::notification,
 };
 
-pub mod backoff;
 pub mod claude_code;
 pub mod cliproxy;
 pub mod codex;
