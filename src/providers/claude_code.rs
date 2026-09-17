@@ -11,7 +11,10 @@ use security_framework::item::{ItemClass, ItemSearchOptions, SearchResult};
 use serde::{Deserialize, Serialize};
 
 use super::{DataProvider, PeakHoursInfo, ProviderKind, UsageData};
-use crate::providers::{ApiUsage, TierInfo, UsageWindow, backoff::Backoff};
+use crate::{
+  providers::{ApiUsage, TierInfo, UsageWindow},
+  utils::http::{Client, HttpError},
+};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ClaudeCodeSettings {
@@ -240,7 +243,7 @@ impl std::fmt::Display for SubscriptionTier {
 
 pub struct ClaudeCodeProvider {
   token: Mutex<TokenState>,
-  backoff: Backoff,
+  client: Client,
   /// Whether keychain reads (including token refreshes) go through the `security` CLI.
   cli_keychain: bool,
   /// Organization UUID, lazily populated from the first profile fetch.
@@ -269,7 +272,7 @@ impl ClaudeCodeProvider {
 
     return Ok(Self {
       token: Mutex::new(token),
-      backoff: Backoff::new(),
+      client: Client::new(),
       cli_keychain,
       org_uuid: Mutex::new(None),
       overage_grant: Mutex::new(OverageGrantCache::default()),
@@ -424,10 +427,6 @@ impl ClaudeCodeProvider {
   }
 
   fn get(&self, url: &str) -> Option<String> {
-    if self.backoff.should_skip(url) {
-      return None;
-    }
-
     // Proactive expiry check: if the current token is known to have expired,
     // re-read the keychain before making the request.
     let needs_refresh = {
@@ -455,7 +454,7 @@ impl ClaudeCodeProvider {
 
     let mut result = self.get_inner(url);
 
-    if let Err(ureq::Error::StatusCode(401)) = &result {
+    if let Err(HttpError::Status(401)) = &result {
       log::warn!("Got 401 for {}, refreshing token from keychain", url);
 
       if let Ok(new_state) = Self::fetch_keychain_token(self.cli_keychain) {
@@ -477,33 +476,29 @@ impl ClaudeCodeProvider {
       }
     }
 
-    if let Err(ureq::Error::StatusCode(429)) = &result {
-      self.backoff.note_rate_limited();
-      return None;
-    }
-
-    if let Err(ref e) = result {
-      log::error!("Request failed for {}: {}", url, e);
-    }
-
-    if result.is_ok() {
-      self.backoff.note_success();
-    }
-
-    return result.ok();
+    return match result {
+      Ok(body) => Some(body),
+      // Backoff outcomes are already logged by the client.
+      Err(HttpError::Skipped | HttpError::RateLimited) => None,
+      Err(e) => {
+        log::error!("Request failed for {}: {}", url, e);
+        None
+      }
+    };
   }
 
-  fn get_inner(&self, url: &str) -> Result<String, ureq::Error> {
-    log::debug!("GET {}", url);
+  fn get_inner(&self, url: &str) -> Result<String, HttpError> {
+    // Copy the header out so the token lock is not held across the network call.
+    let auth_header = {
+      let token = self.token.lock().unwrap();
+      format!("Bearer {}", token.secret.expose_secret())
+    };
 
-    let token = self.token.lock().unwrap();
-    let mut response = ureq::get(url)
-      .header("Authorization", &format!("Bearer {}", token.secret.expose_secret()))
-      .header("anthropic-beta", "oauth-2025-04-20")
-      .header("User-Agent", "claude-code/2.1.71")
-      .call()?;
-
-    return response.body_mut().read_to_string();
+    return self.client.get(url, &[
+      ("Authorization", &auth_header),
+      ("anthropic-beta", "oauth-2025-04-20"),
+      ("User-Agent", "claude-code/2.1.71"),
+    ]);
   }
 }
 

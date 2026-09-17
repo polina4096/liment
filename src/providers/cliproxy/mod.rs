@@ -8,6 +8,8 @@ pub use codex::{CliproxyCodexProvider, CliproxyCodexSettings};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
+use crate::utils::http::Client;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ApiCallRequest {
@@ -26,6 +28,7 @@ struct ApiCallResponse {
 pub struct CliproxyClient {
   base_url: String,
   management_token: SecretString,
+  client: Client,
 }
 
 impl CliproxyClient {
@@ -33,22 +36,22 @@ impl CliproxyClient {
     return Self {
       base_url: base_url.trim_end_matches('/').to_string(),
       management_token: SecretString::from(management_token.to_string()),
+      client: Client::new(),
     };
+  }
+
+  fn auth_header(&self) -> String {
+    return format!("Bearer {}", self.management_token.expose_secret());
   }
 
   pub fn management_get(&self, path: &str) -> Option<String> {
     let endpoint = format!("{}{}", self.base_url, path);
+    let auth = self.auth_header();
 
-    let mut response = ureq::get(&endpoint)
-      .header("Authorization", &format!("Bearer {}", self.management_token.expose_secret()))
-      .call()
+    return self
+      .client
+      .get(&endpoint, &[("Authorization", &auth)])
       .inspect_err(|e| log::error!("Cliproxy management GET failed for {}: {}", path, e))
-      .ok()?;
-
-    return response
-      .body_mut()
-      .read_to_string()
-      .inspect_err(|e| log::error!("Failed to read cliproxy management GET response body: {}", e))
       .ok();
   }
 
@@ -66,18 +69,12 @@ impl CliproxyClient {
     let json_body = serde_json::to_string(&request)
       .inspect_err(|e| log::error!("Failed to serialize api-call request: {}", e))
       .ok()?;
+    let auth = self.auth_header();
 
-    let mut response = ureq::post(&endpoint)
-      .header("Authorization", &format!("Bearer {}", self.management_token.expose_secret()))
-      .header("Content-Type", "application/json")
-      .send(&json_body)
+    let response_text = self
+      .client
+      .post_json(&endpoint, &[("Authorization", &auth)], &json_body)
       .inspect_err(|e| log::error!("Cliproxy request failed for {}: {}", url, e))
-      .ok()?;
-
-    let response_text = response
-      .body_mut()
-      .read_to_string()
-      .inspect_err(|e| log::error!("Failed to read cliproxy response body: {}", e))
       .ok()?;
 
     let parsed: ApiCallResponse = serde_json::from_str(&response_text)

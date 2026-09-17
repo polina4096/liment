@@ -5,7 +5,10 @@ use rgb::Rgb;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
-use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageDetail, UsageWindow, backoff::Backoff};
+use crate::{
+  providers::{DataProvider, ProviderKind, TierInfo, UsageData, UsageDetail, UsageWindow},
+  utils::http::{Client, HttpError},
+};
 
 pub const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 pub const USER_AGENT: &str = "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal";
@@ -220,7 +223,7 @@ struct Credentials {
 
 pub struct CodexProvider {
   settings: CodexSettings,
-  backoff: Backoff,
+  client: Client,
 }
 
 impl CodexProvider {
@@ -229,7 +232,7 @@ impl CodexProvider {
 
     let provider = Self {
       settings: settings.clone(),
-      backoff: Backoff::new(),
+      client: Client::new(),
     };
 
     provider.read_credentials()?;
@@ -274,55 +277,38 @@ impl CodexProvider {
   }
 
   fn get(&self, url: &str) -> Option<String> {
-    if self.backoff.should_skip(url) {
-      return None;
-    }
-
     let credentials = self
       .read_credentials()
       .inspect_err(|e| log::error!("Failed to read Codex credentials: {:#}", e))
       .ok()?;
 
-    let result = self.get_inner(url, &credentials);
-
-    if let Err(ureq::Error::StatusCode(429)) = &result {
-      self.backoff.note_rate_limited();
-      return None;
-    }
-
-    if let Err(ureq::Error::StatusCode(401)) = &result {
-      log::error!("Codex token rejected (401), log in again with `codex login`");
-      return None;
-    }
-
-    if let Err(e) = &result {
-      log::error!("Request failed for {}: {}", url, e);
-      return None;
-    }
-
-    self.backoff.note_success();
-
-    return result.ok();
-  }
-
-  fn get_inner(&self, url: &str, credentials: &Credentials) -> Result<String, ureq::Error> {
-    log::debug!("GET {}", url);
-
-    let mut request = ureq::get(url)
-      .header("Authorization", &format!("Bearer {}", credentials.token.expose_secret()))
-      .header("Content-Type", "application/json")
-      .header("User-Agent", USER_AGENT);
+    let auth_header = format!("Bearer {}", credentials.token.expose_secret());
+    let mut headers = vec![
+      ("Authorization", auth_header.as_str()),
+      ("Content-Type", "application/json"),
+      ("User-Agent", USER_AGENT),
+    ];
 
     if let Some(account_id) = &credentials.account_id {
-      request = request.header("Chatgpt-Account-Id", account_id);
+      headers.push(("Chatgpt-Account-Id", account_id));
     }
     else {
       log::warn!("No ChatGPT account id available, the request will likely be rejected");
     }
 
-    let mut response = request.call()?;
-
-    return response.body_mut().read_to_string();
+    return match self.client.get(url, &headers) {
+      Ok(body) => Some(body),
+      // Backoff outcomes are already logged by the client.
+      Err(HttpError::Skipped | HttpError::RateLimited) => None,
+      Err(HttpError::Status(401)) => {
+        log::error!("Codex token rejected (401), log in again with `codex login`");
+        None
+      }
+      Err(e) => {
+        log::error!("Request failed for {}: {}", url, e);
+        None
+      }
+    };
   }
 }
 
