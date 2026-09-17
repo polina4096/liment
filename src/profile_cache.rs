@@ -4,7 +4,7 @@ use std::{
   time::{Duration, Instant},
 };
 
-use crate::providers::{DataProvider, ProviderKind, TierInfo};
+use crate::providers::{DataProvider, ProviderKind, TierInfo, UsageData};
 
 const PROFILE_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 
@@ -17,32 +17,28 @@ struct CacheEntry {
 pub struct ProfileCache(Mutex<HashMap<ProviderKind, CacheEntry>>);
 
 impl ProfileCache {
-  /// Returns cached profile if fresh, otherwise fetches from the provider and caches it.
-  pub fn resolve(&self, provider: &dyn DataProvider) -> Option<TierInfo> {
+  /// Resolves the account tier for a refresh. A tier carried by the usage data wins and
+  /// refreshes the cache for free; otherwise the cached tier is used while fresh, and
+  /// `fetch_profile` is called only once it goes stale.
+  pub fn resolve(&self, provider: &dyn DataProvider, data: Option<&UsageData>) -> Option<TierInfo> {
     let kind = provider.kind();
 
-    // Retrieve cached entry if exists and fresh.
-    if { true }
-      && let Some(entry) = self.0.lock().unwrap().get(&kind)
+    if let Some(tier) = data.and_then(|d| d.tier.clone()) {
+      self.store(kind, &tier);
+      return Some(tier);
+    }
+
+    if let Some(entry) = self.0.lock().unwrap().get(&kind)
       && entry.last.elapsed() < PROFILE_CACHE_TTL
     {
       log::debug!("Using cached profile for {} ({}s old)", kind, entry.last.elapsed().as_secs());
-
-      return Some(TierInfo {
-        name: entry.tier.name.clone(),
-        color: entry.tier.color,
-      });
+      return Some(entry.tier.clone());
     }
 
-    // Fetch fresh profile from the provider and cache it.
-    return provider.fetch_profile().inspect(|profile| {
-      self.0.lock().unwrap().insert(kind, CacheEntry {
-        tier: TierInfo {
-          name: profile.name.clone(),
-          color: profile.color,
-        },
-        last: Instant::now(),
-      });
-    });
+    return provider.fetch_profile().inspect(|tier| self.store(kind, tier));
+  }
+
+  fn store(&self, kind: ProviderKind, tier: &TierInfo) {
+    self.0.lock().unwrap().insert(kind, CacheEntry { tier: tier.clone(), last: Instant::now() });
   }
 }

@@ -104,6 +104,10 @@ impl DataProvider for DebugProvider {
   fn fetch_data(&self) -> Option<UsageData> {
     let mut data = self.inner.fetch_data()?;
 
+    if let Some(tier) = &self.tier {
+      data.tier = Some(tier.clone());
+    }
+
     for window in &mut data.windows {
       if let Some(utilization) = self.utilization {
         window.utilization = utilization;
@@ -136,11 +140,8 @@ impl DataProvider for DebugProvider {
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    if let Some(ref tier) = self.tier {
-      return Some(TierInfo {
-        name: tier.name.clone(),
-        color: tier.color,
-      });
+    if let Some(tier) = &self.tier {
+      return Some(tier.clone());
     }
 
     return self.inner.fetch_profile();

@@ -148,6 +148,7 @@ impl From<UsageResponse> for UsageData {
       peak_hours: None,
       windows,
       details: Vec::new(),
+      tier: None,
     };
   }
 }
@@ -676,9 +677,12 @@ impl DataProvider for ClaudeCodeProvider {
     // it into. Free credits make no sense for accounts without extra usage in the first place.
     if data.api_usage.is_some() {
       // Lazily learn the org UUID via a profile fetch on first call. Subsequent calls
-      // hit the cached UUID directly.
-      if self.org_uuid.lock().unwrap().is_none() {
-        self.fetch_profile_response();
+      // hit the cached UUID directly. The tier from that same response is passed along so
+      // the profile cache doesn't repeat the request.
+      if self.org_uuid.lock().unwrap().is_none()
+        && let Some(profile) = self.fetch_profile_response()
+      {
+        data.tier = Some(profile.organization.rate_limit_tier.tier_info());
       }
 
       if let Some(grant) = self.fetch_overage_grant()

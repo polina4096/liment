@@ -312,7 +312,7 @@ impl AppDelegate {
 
     std::thread::spawn(move || {
       let data = provider.fetch_data();
-      let profile = profile_cache.resolve(&*provider);
+      let profile = profile_cache.resolve(&*provider, data.as_ref());
 
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread");

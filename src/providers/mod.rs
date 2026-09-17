@@ -42,6 +42,7 @@ pub struct ProviderSettings {
   pub cliproxy_codex: Option<CliproxyCodexSettings>,
 }
 
+#[derive(Clone)]
 pub struct TierInfo {
   pub name: String,
   pub color: Rgb<u8>,
@@ -65,6 +66,10 @@ pub struct UsageData {
 
   /// Extra provider-specific rows shown under the usage windows.
   pub details: Vec<UsageDetail>,
+
+  /// Account tier, when the usage fetch already learned it. `None` means the app should
+  /// resolve it via `DataProvider::fetch_profile` (subject to its own cache) instead.
+  pub tier: Option<TierInfo>,
 }
 
 pub struct UsageDetail {
@@ -137,7 +142,9 @@ pub trait DataProvider: Send + Sync {
   /// Fetches usage data for the provider.
   fn fetch_data(&self) -> Option<UsageData>;
 
-  /// Fetches the account tier info. Returns `None` if the provider doesn't support it.
+  /// Fetches the account tier info with a dedicated request. Returns `None` if the provider
+  /// doesn't support it. Providers whose usage response already carries the tier should set
+  /// `UsageData::tier` instead, which takes precedence and costs no extra request.
   fn fetch_profile(&self) -> Option<TierInfo> {
     return None;
   }

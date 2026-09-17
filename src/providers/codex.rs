@@ -157,6 +157,7 @@ impl From<UsageResponse> for UsageData {
       peak_hours: None,
       windows,
       details,
+      tier: usage.plan_type.as_ref().map(SubscriptionTier::tier_info),
     };
   }
 }
@@ -218,23 +219,6 @@ impl std::fmt::Display for SubscriptionTier {
   }
 }
 
-/// Remembers the plan tier from the most recent usage response so `fetch_profile` doesn't
-/// have to make another full usage request just to read it again.
-#[derive(Default)]
-pub struct TierCache(Mutex<Option<SubscriptionTier>>);
-
-impl TierCache {
-  pub fn remember(&self, usage: &UsageResponse) {
-    if let Some(tier) = &usage.plan_type {
-      *self.0.lock().unwrap() = Some(tier.clone());
-    }
-  }
-
-  pub fn tier_info(&self) -> Option<TierInfo> {
-    return self.0.lock().unwrap().as_ref().map(SubscriptionTier::tier_info);
-  }
-}
-
 /// Path to the Codex CLI's `auth.json`. Honors `CODEX_HOME` like the CLI does, falling
 /// back to `~/.codex`.
 fn get_auth_path() -> Result<Utf8PathBuf> {
@@ -286,7 +270,6 @@ fn jwt_expiry(token: &str) -> Option<Timestamp> {
 pub struct CodexProvider {
   settings: CodexSettings,
   client: Client,
-  tier: TierCache,
   /// Serializes token refreshes so two concurrent fetches can't both spend the (rotating)
   /// refresh token.
   refresh_lock: Mutex<()>,
@@ -299,7 +282,6 @@ impl CodexProvider {
     let provider = Self {
       settings: settings.clone(),
       client: Client::new(),
-      tier: TierCache::default(),
       refresh_lock: Mutex::new(()),
     };
 
@@ -447,7 +429,6 @@ impl CodexProvider {
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed codex usage: {:?}", u))
-      .inspect(|u| self.tier.remember(u))
       .inspect_err(|e| log::warn!("Failed to parse codex usage response: {}", e))
       .ok();
   }
@@ -519,11 +500,8 @@ impl DataProvider for CodexProvider {
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    // The tier rides along in the usage response `fetch_data` just fetched.
-    return self
-      .tier
-      .tier_info()
-      .or_else(|| self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info())));
+    // Normally unused: the tier is delivered through `UsageData::tier` by `fetch_data`.
+    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
