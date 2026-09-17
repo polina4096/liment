@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{ContextCompat as _, Result};
 use jiff::Timestamp;
@@ -58,19 +60,24 @@ pub struct UsageBucket {
 }
 
 impl UsageBucket {
-  /// Short human-readable window duration, e.g. "5h" or "7d".
-  fn format_duration(&self) -> String {
+  /// Short human-readable window duration, e.g. "5h" or "7d". `None` if the API reported
+  /// no usable period.
+  fn format_duration(&self) -> Option<String> {
     let seconds = self.limit_window_seconds;
 
+    if seconds <= 0 {
+      return None;
+    }
+
     if seconds % 86400 == 0 {
-      return format!("{}d", seconds / 86400);
+      return Some(format!("{}d", seconds / 86400));
     }
 
     if seconds % 3600 == 0 {
-      return format!("{}h", seconds / 3600);
+      return Some(format!("{}h", seconds / 3600));
     }
 
-    return format!("{}m", seconds.div_euclid(60));
+    return Some(format!("{}m", (seconds / 60).max(1)));
   }
 
   fn to_window(&self, title: String, short_title: Option<String>) -> UsageWindow {
@@ -96,14 +103,21 @@ impl From<UsageResponse> for UsageData {
 
     if let Some(rate_limit) = &usage.rate_limit {
       for bucket in rate_limit.windows() {
-        let duration = bucket.format_duration();
-        windows.push(bucket.to_window(format!("{} Limit", duration), Some(duration)));
+        let window = match bucket.format_duration() {
+          Some(duration) => bucket.to_window(format!("{} Limit", duration), Some(duration)),
+          None => bucket.to_window("Usage Limit".to_string(), None),
+        };
+        windows.push(window);
       }
     }
 
     if let Some(code_review) = &usage.code_review_rate_limit {
       for bucket in code_review.windows() {
-        windows.push(bucket.to_window(format!("Review {}", bucket.format_duration()), None));
+        let title = match bucket.format_duration() {
+          Some(duration) => format!("Review {}", duration),
+          None => "Review".to_string(),
+        };
+        windows.push(bucket.to_window(title, None));
       }
     }
 
@@ -115,7 +129,11 @@ impl From<UsageResponse> for UsageData {
 
       let name = additional.limit_name.as_deref().unwrap_or("Extra");
       for bucket in rate_limit.windows() {
-        windows.push(bucket.to_window(format!("{} {}", name, bucket.format_duration()), None));
+        let title = match bucket.format_duration() {
+          Some(duration) => format!("{} {}", name, duration),
+          None => name.to_string(),
+        };
+        windows.push(bucket.to_window(title, None));
       }
     }
 
@@ -197,6 +215,23 @@ impl std::fmt::Display for SubscriptionTier {
   }
 }
 
+/// Remembers the plan tier from the most recent usage response so `fetch_profile` doesn't
+/// have to make another full usage request just to read it again.
+#[derive(Default)]
+pub struct TierCache(Mutex<Option<SubscriptionTier>>);
+
+impl TierCache {
+  pub fn remember(&self, usage: &UsageResponse) {
+    if let Some(tier) = &usage.plan_type {
+      *self.0.lock().unwrap() = Some(tier.clone());
+    }
+  }
+
+  pub fn tier_info(&self) -> Option<TierInfo> {
+    return self.0.lock().unwrap().as_ref().map(SubscriptionTier::tier_info);
+  }
+}
+
 fn get_auth_path() -> Result<Utf8PathBuf> {
   let home = etcetera::home_dir()?;
   let home = Utf8Path::from_path(&home).context("Home directory path is not valid UTF-8")?;
@@ -224,6 +259,7 @@ struct Credentials {
 pub struct CodexProvider {
   settings: CodexSettings,
   client: Client,
+  tier: TierCache,
 }
 
 impl CodexProvider {
@@ -233,6 +269,7 @@ impl CodexProvider {
     let provider = Self {
       settings: settings.clone(),
       client: Client::new(),
+      tier: TierCache::default(),
     };
 
     provider.read_credentials()?;
@@ -272,6 +309,7 @@ impl CodexProvider {
 
     return serde_json::from_str(&body)
       .inspect(|u: &UsageResponse| log::debug!("Parsed codex usage: {:?}", u))
+      .inspect(|u| self.tier.remember(u))
       .inspect_err(|e| log::warn!("Failed to parse codex usage response: {}", e))
       .ok();
   }
@@ -322,7 +360,11 @@ impl DataProvider for CodexProvider {
   }
 
   fn fetch_profile(&self) -> Option<TierInfo> {
-    return self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info()));
+    // The tier rides along in the usage response `fetch_data` just fetched.
+    return self
+      .tier
+      .tier_info()
+      .or_else(|| self.fetch_usage().and_then(|u| u.plan_type.map(|t| t.tier_info())));
   }
 
   fn tray_icon_svg(&self) -> &'static [u8] {
