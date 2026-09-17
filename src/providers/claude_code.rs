@@ -205,16 +205,28 @@ impl OverageCreditGrant {
 
 const OVERAGE_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 
-#[derive(Debug, Deserialize, Clone, Copy, strum::EnumIter)]
+#[derive(Debug, Deserialize, Clone)]
+#[serde(from = "String")]
 pub enum SubscriptionTier {
-  #[serde(rename = "default_claude_free")]
   Free,
-  #[serde(rename = "default_claude_pro")]
   Pro,
-  #[serde(rename = "default_claude_max_5x")]
   Max5x,
-  #[serde(rename = "default_claude_max_20x")]
   Max20x,
+  /// A tier this app doesn't know about yet; keeps the raw API identifier so a new plan
+  /// still shows a badge instead of failing the profile parse.
+  Unknown(String),
+}
+
+impl From<String> for SubscriptionTier {
+  fn from(value: String) -> Self {
+    return match value.as_str() {
+      "default_claude_free" => SubscriptionTier::Free,
+      "default_claude_pro" => SubscriptionTier::Pro,
+      "default_claude_max_5x" => SubscriptionTier::Max5x,
+      "default_claude_max_20x" => SubscriptionTier::Max20x,
+      _ => SubscriptionTier::Unknown(value),
+    };
+  }
 }
 
 impl SubscriptionTier {
@@ -222,7 +234,7 @@ impl SubscriptionTier {
     return TierInfo {
       name: self.to_string(),
       color: match self {
-        SubscriptionTier::Free => Rgb::new(140, 140, 155),
+        SubscriptionTier::Free | SubscriptionTier::Unknown(_) => Rgb::new(140, 140, 155),
         SubscriptionTier::Pro => Rgb::new(90, 145, 210),
         SubscriptionTier::Max5x => Rgb::new(145, 110, 200),
         SubscriptionTier::Max20x => Rgb::new(205, 130, 95),
@@ -238,6 +250,8 @@ impl std::fmt::Display for SubscriptionTier {
       SubscriptionTier::Pro => write!(f, "Pro"),
       SubscriptionTier::Max5x => write!(f, "Max 5x"),
       SubscriptionTier::Max20x => write!(f, "Max 20x"),
+      // Anthropic's identifiers all start with "default_claude_"; drop it for the badge.
+      SubscriptionTier::Unknown(raw) => write!(f, "{}", raw.strip_prefix("default_claude_").unwrap_or(raw)),
     };
   }
 }
