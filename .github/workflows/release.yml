@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust (aarch64)
         run: rustup target add aarch64-apple-darwin
@@ -21,7 +21,7 @@ jobs:
         run: ./scripts/package.sh "${GITHUB_REF_NAME#v}"
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: target/liment.app.zip
           generate_release_notes: true
