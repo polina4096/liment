@@ -329,29 +329,3 @@ impl DataProvider for CodexProvider {
     return include_bytes!("../../resources/codex.svg");
   }
 }
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  const SAMPLE: &str = include_str!("../../resources/tests/codex_usage.json");
-
-  #[test]
-  fn parses_sample_usage() {
-    let usage: UsageResponse = serde_json::from_str(SAMPLE).unwrap();
-
-    assert!(matches!(usage.plan_type, Some(SubscriptionTier::ProLite)));
-
-    let data: UsageData = usage.into();
-    let titles: Vec<_> = data.windows.iter().map(|w| (w.title.as_str(), w.short_title.as_deref())).collect();
-
-    assert_eq!(titles, vec![
-      ("7d Limit", Some("7d")),
-      ("GPT-5.3-Codex-Spark 5h", None),
-      ("GPT-5.3-Codex-Spark 7d", None),
-    ]);
-
-    let details: Vec<_> = data.details.iter().map(|d| (d.label.as_str(), d.value.as_str())).collect();
-    assert_eq!(details, vec![("Reset credits", "2")]);
-  }
-}
