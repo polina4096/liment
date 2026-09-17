@@ -71,10 +71,10 @@ monochrome_icon = true
 # Display mode: "usage" or "remaining".
 display_mode = "usage"
 
-# Which usage windows to show in the tray, by short label, in order.
+# Which usage windows to show in the tray, by short label, in order (e.g. ["5h"] or ["7d", "5h"]).
 # Empty = the first two available. At most two are used, unknown labels are skipped.
 # A single window is drawn stacked (label over percentage) instead of in one line.
-tray_windows = ["5h"]
+tray_windows = []
 
 # Whether to show period percentage next to "resets in".
 show_period_percentage = false

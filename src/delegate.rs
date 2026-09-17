@@ -513,13 +513,26 @@ impl AppDelegate {
     let available = || return windows.iter().filter(|w| w.short_title.is_some());
 
     if !wanted.is_empty() {
-      let picked: Vec<&UsageWindow> = wanted
-        .iter()
-        .take(TRAY_MAX_LINES)
-        .filter_map(|label| {
-          return available().find(|w| w.short_title.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(label)));
-        })
-        .collect();
+      // Resolve every label first, then cap — so an unknown label doesn't eat a slot.
+      let mut picked: Vec<&UsageWindow> = Vec::new();
+
+      for label in wanted {
+        let Some(window) =
+          available().find(|w| w.short_title.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(label)))
+        else {
+          log::warn!("Configured tray window {label:?} does not match any usage window, skipping");
+          continue;
+        };
+
+        if picked.iter().any(|w| std::ptr::eq(*w, window)) {
+          log::warn!("Configured tray window {label:?} is listed more than once, ignoring the duplicate");
+          continue;
+        }
+
+        picked.push(window);
+      }
+
+      picked.truncate(TRAY_MAX_LINES);
 
       if !picked.is_empty() {
         return picked;
