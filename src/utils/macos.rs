@@ -1,12 +1,21 @@
-/// Creates a repeating `NSTimer`, adds it to the current run loop, and drops the reference.
-/// The run loop retains the timer, so it stays alive for the app's lifetime.
+/// Creates an `NSTimer`, adds it to the current run loop, and drops the reference.
+/// The run loop retains the timer, so it stays alive until it's done firing.
 ///
-/// Usage: `schedule_timer!(interval_secs, target, selector)`
+/// Usage: `schedule_timer!(interval_secs, target, selector)` for a repeating timer,
+/// or `schedule_timer!(interval_secs, target, selector, once)` for a single shot.
 macro_rules! schedule_timer {
-  ($interval:expr, $target:expr, $selector:ident) => {{
+  ($interval:expr, $target:expr, $selector:ident) => {
+    $crate::utils::macos::schedule_timer!(@build $interval, $target, $selector, true)
+  };
+
+  ($interval:expr, $target:expr, $selector:ident, once) => {
+    $crate::utils::macos::schedule_timer!(@build $interval, $target, $selector, false)
+  };
+
+  (@build $interval:expr, $target:expr, $selector:ident, $repeats:expr) => {{
     let timer = unsafe {
       objc2_foundation::NSTimer::timerWithTimeInterval_target_selector_userInfo_repeats(
-        $interval, $target, objc2::sel!($selector:), None, true,
+        $interval, $target, objc2::sel!($selector:), None, $repeats,
       )
     };
 

@@ -1,4 +1,8 @@
-use std::{cell::RefCell, ffi::c_void, sync::Arc};
+use std::{
+  cell::{Cell, RefCell},
+  ffi::c_void,
+  sync::Arc,
+};
 
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, MainThreadBound};
@@ -59,7 +63,20 @@ pub struct AppDelegateIvars {
 
   /// Retained about window (kept alive so it doesn't get deallocated).
   about_window: RefCell<Option<Retained<NSWindow>>>,
+
+  /// Whether the tray currently shows real data from the active provider. While it does,
+  /// a failed fetch keeps that data on screen instead of blanking the tray.
+  has_data: Cell<bool>,
+
+  /// How many retries have been scheduled since the last successful fetch.
+  retry_attempt: Cell<u32>,
+
+  /// Whether a retry timer is already pending, so failures don't stack timers.
+  retry_pending: Cell<bool>,
 }
+
+/// First retry delay after a failed fetch; doubles on every further failure.
+const RETRY_BASE_SECS: f64 = 30.0;
 
 impl AppDelegateIvars {
   pub fn provider(&self) -> std::cell::Ref<'_, Arc<dyn DataProvider>> {
@@ -85,6 +102,12 @@ define_class!(
   impl AppDelegate {
     #[unsafe(method(onTimer:))]
     fn on_timer(&self, _timer: &NSTimer) {
+      self.refresh();
+    }
+
+    #[unsafe(method(onRetry:))]
+    fn on_retry(&self, _timer: &NSTimer) {
+      self.ivars().retry_pending.set(false);
       self.refresh();
     }
 
@@ -224,6 +247,9 @@ impl AppDelegate {
       config: RefCell::new(config),
       updater: Updater::new(),
       about_window: RefCell::new(None),
+      has_data: Cell::new(false),
+      retry_attempt: Cell::new(0),
+      retry_pending: Cell::new(false),
     });
     let this: Retained<Self> = unsafe { msg_send![super(this), init] };
 
@@ -273,6 +299,13 @@ impl AppDelegate {
     }
 
     let provider = Self::provider_from_config(&new_config);
+
+    // Data from a different provider must not linger if the new one fails to fetch.
+    if provider.kind() != self.ivars().provider().kind() {
+      self.ivars().has_data.set(false);
+      self.ivars().retry_attempt.set(0);
+    }
+
     *self.ivars().provider.borrow_mut() = provider;
     *self.ivars().config.borrow_mut() = new_config;
 
@@ -318,9 +351,59 @@ impl AppDelegate {
       DispatchQueue::main().exec_async(move || {
         let mtm = MainThreadMarker::new().expect("Must be on main thread");
 
-        this.get(mtm).rebuild_ui(data.as_ref(), tier.as_ref());
+        this.get(mtm).apply_fetch_result(data.as_ref(), tier.as_ref());
       });
     });
+  }
+
+  /// Shows fresh data, or rides out a failed fetch.
+  ///
+  /// A failure is usually transient (the network isn't back yet after a wake, a request died
+  /// when the Mac went back to sleep), so the last good data stays on screen and the fetch is
+  /// retried soon with backoff. Only once the retries are used up does the tray fall back to
+  /// the placeholder, so stale numbers are never shown indefinitely.
+  fn apply_fetch_result(&self, data: Option<&UsageData>, tier: Option<&Tier>) {
+    let ivars = self.ivars();
+
+    if data.is_some() {
+      ivars.has_data.set(true);
+      ivars.retry_attempt.set(0);
+      self.rebuild_ui(data, tier);
+      return;
+    }
+
+    let retrying = self.schedule_retry();
+
+    if !ivars.has_data.get() || !retrying {
+      ivars.has_data.set(false);
+      self.rebuild_ui(None, tier);
+    }
+  }
+
+  /// Schedules a one-shot retry with exponential backoff (30s, 60s, 120s, ...). Returns false
+  /// once the next delay would reach the regular refetch interval: the repeating timer takes
+  /// over from there.
+  fn schedule_retry(&self) -> bool {
+    let ivars = self.ivars();
+
+    if ivars.provider().kind() == ProviderKind::Unknown {
+      return false;
+    }
+
+    let attempt = ivars.retry_attempt.get();
+    let delay = RETRY_BASE_SECS * f64::from(2u32.saturating_pow(attempt));
+
+    if delay >= f64::from(ivars.config().refetch_interval) {
+      return false;
+    }
+
+    if !ivars.retry_pending.replace(true) {
+      log::info!("Fetch failed, retrying in {}s (attempt {})", delay, attempt + 1);
+      ivars.retry_attempt.set(attempt + 1);
+      schedule_timer!(delay, self, onRetry, once);
+    }
+
+    return true;
   }
 
   /// Checks for updates on a background thread, updates state and menu when done.

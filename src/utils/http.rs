@@ -38,8 +38,14 @@ pub struct Client {
 
 impl Client {
   pub fn new() -> Self {
+    // ureq has no timeouts by default, so a connection that dies mid-request (e.g. the Mac
+    // going back to sleep during a DarkWake) only fails once the kernel gives up on it.
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+    let config = ureq::Agent::config_builder().timeout_global(Some(REQUEST_TIMEOUT)).build();
+
     return Self {
-      agent: ureq::Agent::new_with_defaults(),
+      agent: ureq::Agent::new_with_config(config),
       backoff: Mutex::new(Backoff::default()),
     };
   }
